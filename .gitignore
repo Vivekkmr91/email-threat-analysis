@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+env/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.log
+
+# Node
+node_modules/
+frontend/build/
+npm-debug.log*
+.npm
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+.docker/
+
+# Secrets
+*.pem
+*.key
+*.crt
+secrets/
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Monitoring data
+prometheus_data/
+grafana_data/

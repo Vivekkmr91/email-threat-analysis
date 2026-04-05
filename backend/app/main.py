@@ -1,0 +1,128 @@
+"""
+Main FastAPI application entry point.
+Multi-Agent Email Threat Analysis System - Backend API
+"""
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+import structlog
+
+from app.core.config import settings
+from app.core.logging import setup_logging
+from app.core.database import init_db, init_neo4j_schema, close_neo4j_driver
+from app.api.routes import router
+from app.api.middleware import RequestLoggingMiddleware, RateLimitMiddleware, APIKeyMiddleware
+
+# Setup logging
+setup_logging()
+logger = structlog.get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application startup and shutdown events."""
+    # Startup
+    logger.info("Starting Email Threat Analysis System", version=settings.APP_VERSION)
+
+    try:
+        await init_db()
+        logger.info("PostgreSQL initialized")
+    except Exception as e:
+        logger.warning("PostgreSQL initialization warning", error=str(e))
+
+    try:
+        await init_neo4j_schema()
+        logger.info("Neo4j schema initialized")
+    except Exception as e:
+        logger.warning("Neo4j initialization warning (non-fatal)", error=str(e))
+
+    logger.info("Application startup complete")
+    yield
+
+    # Shutdown
+    logger.info("Shutting down application")
+    await close_neo4j_driver()
+    logger.info("Application shutdown complete")
+
+
+# ─── FastAPI App ──────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    description="""
+## Multi-Agent Email Threat Analysis System
+
+A production-grade email security platform using:
+- **LangGraph** multi-agent orchestration
+- **5 specialized AI agents** (Text, Metadata, Enrichment, Graph, Decision)
+- **Neo4j graph intelligence** for campaign correlation
+- **VirusTotal & PhishTank** integration
+- **Full explainability** with reasoning traces
+
+### Threat Categories Detected
+- Business Email Compromise (BEC)
+- Phishing & Spear Phishing
+- LLM-Generated Phishing
+- QR Code Phishing (Quishing)
+- Adversary-in-the-Middle (AiTM)
+- Living-off-the-Land (LotL)
+- Malware Attachments
+- Executive Impersonation
+
+### Quick Start
+Submit an email via `POST /api/v1/analyze` to get a complete threat analysis.
+    """,
+    lifespan=lifespan,
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc",
+)
+
+# ─── Middleware ───────────────────────────────────────────────────────────────
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Rate limiting
+app.add_middleware(
+    RateLimitMiddleware,
+    limit_per_minute=settings.RATE_LIMIT_PER_MINUTE,
+)
+
+# Request logging
+app.add_middleware(RequestLoggingMiddleware)
+
+# API Key auth
+if not settings.DEBUG:
+    app.add_middleware(APIKeyMiddleware)
+
+# ─── Routes ──────────────────────────────────────────────────────────────────
+
+app.include_router(router, prefix="/api/v1")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return {
+        "service": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "status": "running",
+        "docs": "/redoc",
+        "api": "/api/v1",
+    }
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger():
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title=f"{settings.APP_NAME} - API Docs",
+    )
