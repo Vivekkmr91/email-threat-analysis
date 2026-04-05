@@ -3,8 +3,17 @@ Aggregator/Decision Agent - Multi-criteria decision analysis (MCDA):
 - Weighted scoring from all agent findings
 - Final verdict determination (Clean / Spam / Suspicious / Malicious)
 - Explainability report generation (Reasoning Trace)
+- ML-model score integration (phishing classifier + LLM-generation detector)
 - Automated response recommendations
 - SOAR/Webhook trigger on high-confidence threats
+- RLHF-informed threshold adaptation
+
+ML Integration
+--------------
+The decision agent now reads the ML scores stored in text_agent_result and
+fuses them into the final verdict using an additional ML-model weight channel.
+When the ML model's phishing_score is high, it can override borderline verdicts
+to prevent false negatives.
 """
 import time
 import json
@@ -19,7 +28,9 @@ from app.core.config import settings
 logger = structlog.get_logger(__name__)
 
 # ─── Agent Weights (MCDA) ────────────────────────────────────────────────────
-# Based on historical accuracy and reliability of each agent
+# Based on historical accuracy and reliability of each agent.
+# The ML model contributes through the text_analysis_agent score (which already
+# incorporates ML), but we also apply a direct ML override below.
 AGENT_WEIGHTS = {
     "text_analysis_agent": 0.25,
     "metadata_agent": 0.30,
@@ -49,34 +60,68 @@ def run_decision_agent(state: EmailAnalysisState) -> EmailAnalysisState:
     """
     Final Aggregator/Decision Agent.
     Aggregates all agent findings and produces final verdict + explainability report.
+    Now integrates ML model scores from text_agent_result for enhanced accuracy.
     """
     start_time = time.time()
     log = logger.bind(analysis_id=state["analysis_id"])
     log.info("Decision Agent starting")
 
     findings = state.get("agent_findings", [])
-    parsed = state.get("parsed_email", {}) or {}
+    parsed   = state.get("parsed_email", {}) or {}
 
-    # 1. Aggregate weighted scores
+    # ── 1. Aggregate weighted MCDA scores ────────────────────────────────────
     weighted_score, agent_score_breakdown = _calculate_weighted_score(findings)
 
-    # 2. Apply category-based boosts
+    # ── 2. ML model override / fusion ────────────────────────────────────────
+    ml_phishing_score    = None
+    ml_llm_score         = None
+    ml_model_version     = None
+    ml_top_features      = []
+
+    text_result = state.get("text_agent_result") or {}
+    if text_result:
+        ml_phishing_score  = text_result.get("ml_phishing_score")
+        ml_llm_score       = text_result.get("ml_llm_score")
+        ml_model_version   = text_result.get("ml_model_version")
+        ml_top_features    = text_result.get("ml_top_features", [])
+
+    # Fuse ML score with MCDA score (20% ML direct contribution)
+    if ml_phishing_score is not None:
+        fused_score = weighted_score * 0.80 + ml_phishing_score * 0.20
+    else:
+        fused_score = weighted_score
+
+    # ── 3. Apply category-based boosts ───────────────────────────────────────
     all_categories = _collect_all_categories(findings)
     category_boost = _calculate_category_boost(all_categories)
-    final_score = min(weighted_score + category_boost, 1.0)
+    final_score    = min(fused_score + category_boost, 1.0)
 
-    # 3. Determine verdict
+    # ── 4. ML override: high-confidence ML phishing forces at least suspicious
+    if ml_phishing_score is not None and ml_phishing_score >= 0.80:
+        if final_score < VERDICT_THRESHOLDS["suspicious"]:
+            final_score = VERDICT_THRESHOLDS["suspicious"]
+            log.info(
+                "ML model override applied: forced suspicious",
+                ml_phishing_score=ml_phishing_score,
+            )
+
+    # ── 5. Determine verdict ─────────────────────────────────────────────────
     verdict = _determine_verdict(final_score, all_categories)
 
-    # 4. Generate reasoning trace
+    # ── 6. Generate reasoning trace (now includes ML scores) ─────────────────
     reasoning_trace, reasoning_steps = _generate_reasoning_trace(
-        findings, final_score, verdict, parsed, agent_score_breakdown, category_boost
+        findings, final_score, verdict, parsed, agent_score_breakdown,
+        category_boost,
+        ml_phishing_score=ml_phishing_score,
+        ml_llm_score=ml_llm_score,
+        ml_model_version=ml_model_version,
+        ml_top_features=ml_top_features,
     )
 
-    # 5. Generate recommended actions
+    # ── 7. Generate recommended actions ──────────────────────────────────────
     recommended_actions = _generate_recommendations(verdict, all_categories, final_score)
 
-    # 6. Trigger automated response if needed
+    # ── 8. Trigger automated response if needed ───────────────────────────────
     if verdict == "malicious" and final_score >= settings.HIGH_RISK_THRESHOLD:
         try:
             loop = asyncio.new_event_loop()
@@ -87,26 +132,28 @@ def run_decision_agent(state: EmailAnalysisState) -> EmailAnalysisState:
         except Exception as e:
             log.warning("Automated response trigger failed", error=str(e))
 
-    total_time = int((time.time() - start_time) * 1000)
-    start_ts = state.get("start_time", time.time())
+    total_time          = int((time.time() - start_time) * 1000)
+    start_ts            = state.get("start_time", time.time())
     total_analysis_time = int((time.time() - start_ts) * 1000)
 
     log.info(
         "Decision Agent complete",
         verdict=verdict,
         score=final_score,
+        ml_phishing=ml_phishing_score,
+        ml_llm=ml_llm_score,
         categories=all_categories,
-        total_ms=total_analysis_time
+        total_ms=total_analysis_time,
     )
 
     return {
         **state,
-        "verdict": verdict,
-        "threat_score": final_score,
-        "threat_categories": list(set(all_categories)),
-        "reasoning_trace": reasoning_trace,
-        "reasoning_steps": reasoning_steps,
-        "recommended_actions": recommended_actions,
+        "verdict":              verdict,
+        "threat_score":         final_score,
+        "threat_categories":    list(set(all_categories)),
+        "reasoning_trace":      reasoning_trace,
+        "reasoning_steps":      reasoning_steps,
+        "recommended_actions":  recommended_actions,
         "analysis_duration_ms": total_analysis_time,
     }
 
@@ -176,6 +223,10 @@ def _generate_reasoning_trace(
     parsed: Dict,
     score_breakdown: Dict,
     category_boost: float,
+    ml_phishing_score: Optional[float] = None,
+    ml_llm_score: Optional[float] = None,
+    ml_model_version: Optional[str] = None,
+    ml_top_features: Optional[List] = None,
 ) -> tuple:
     """Generate human-readable explainability report."""
     subject = parsed.get("subject", "N/A")
@@ -224,6 +275,22 @@ def _generate_reasoning_trace(
             "key_findings": agent_findings[:5],
         })
 
+    # ML model section
+    if ml_phishing_score is not None:
+        ml_emoji = "🔴" if ml_phishing_score >= 0.7 else "🟡" if ml_phishing_score >= 0.4 else "🟢"
+        trace_parts.append(f"\n{ml_emoji} **ML Phishing Classifier** (v{ml_model_version or 'unknown'})\n")
+        trace_parts.append(f"  • Phishing probability: {ml_phishing_score:.1%}\n")
+        if ml_llm_score is not None:
+            trace_parts.append(f"  • LLM-generated probability: {ml_llm_score:.1%}\n")
+        if ml_top_features:
+            trace_parts.append("  • Top driving features:\n")
+            for feat in (ml_top_features or [])[:3]:
+                trace_parts.append(
+                    f"    – {feat.get('feature_name', '?')} "
+                    f"(value={feat.get('feature_value', 0):.2f}, "
+                    f"Δ={feat.get('importance', 0):.3f})\n"
+                )
+
     # Score calculation explanation
     trace_parts.append(f"\n**Score Calculation:**\n")
     for agent_name, breakdown in score_breakdown.items():
@@ -231,6 +298,11 @@ def _generate_reasoning_trace(
             f"  • {agent_name.replace('_', ' ').title()}: "
             f"{breakdown['score']:.2%} × {breakdown['weight']:.0%} weight "
             f"= {breakdown['weighted_contribution']:.3f}\n"
+        )
+    if ml_phishing_score is not None:
+        trace_parts.append(
+            f"  • ML model direct contribution (20%): {ml_phishing_score:.2%} × 0.20 "
+            f"= {ml_phishing_score * 0.20:.3f}\n"
         )
     if category_boost > 0:
         trace_parts.append(f"  • Category boost: +{category_boost:.2%}\n")
