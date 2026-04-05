@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.database import init_db, init_neo4j_schema, close_neo4j_driver
 from app.api.routes import router
+from app.api.ml_routes import router as ml_router
 from app.api.middleware import RequestLoggingMiddleware, RateLimitMiddleware, APIKeyMiddleware
 
 # Setup logging
@@ -38,6 +39,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Neo4j initialization warning (non-fatal)", error=str(e))
 
+    # Warm up ML model registry (loads checkpoints if they exist)
+    try:
+        from app.ml.phishing_classifier import get_registry
+        registry = get_registry()
+        logger.info("ML model registry initialized", status=registry.status())
+    except Exception as e:
+        logger.warning("ML model registry initialization warning", error=str(e))
+
+    # Warm up RLHF pipeline
+    try:
+        from app.ml.rlhf import get_rlhf_pipeline
+        pipeline = get_rlhf_pipeline()
+        logger.info("RLHF pipeline initialized", stats=pipeline.store.stats())
+    except Exception as e:
+        logger.warning("RLHF pipeline initialization warning", error=str(e))
+
     logger.info("Application startup complete")
     yield
 
@@ -58,14 +75,22 @@ app = FastAPI(
 A production-grade email security platform using:
 - **LangGraph** multi-agent orchestration
 - **5 specialized AI agents** (Text, Metadata, Enrichment, Graph, Decision)
+- **Custom ML Models** – 60-feature phishing classifier + LLM-generation detector
+- **RLHF Pipeline** – Reinforcement Learning from Human Feedback for continuous improvement
 - **Neo4j graph intelligence** for campaign correlation
 - **VirusTotal & PhishTank** integration
-- **Full explainability** with reasoning traces
+- **Full explainability** with reasoning traces & feature attribution
+
+### ML & RLHF
+- `POST /api/v1/ml/predict` – Fast ML-only prediction with feature attribution
+- `POST /api/v1/ml/feedback` – Submit analyst feedback for RLHF training
+- `POST /api/v1/ml/train` – Trigger a training cycle
+- `GET  /api/v1/ml/rlhf/status` – RLHF pipeline status
 
 ### Threat Categories Detected
 - Business Email Compromise (BEC)
 - Phishing & Spear Phishing
-- LLM-Generated Phishing
+- LLM-Generated Phishing (custom model)
 - QR Code Phishing (Quishing)
 - Adversary-in-the-Middle (AiTM)
 - Living-off-the-Land (LotL)
@@ -106,7 +131,8 @@ if not settings.DEBUG:
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
-app.include_router(router, prefix="/api/v1")
+app.include_router(router,    prefix="/api/v1")
+app.include_router(ml_router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)

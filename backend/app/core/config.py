@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = Field(default="redis://redis:6379/1")
     CELERY_RESULT_BACKEND: str = Field(default="redis://redis:6379/2")
 
+    # ML Model Configuration
+    ML_MODEL_DIR: str = Field(default="/tmp/email_threat_ml")
+    ML_PHISHING_THRESHOLD: float = Field(default=0.5)
+    ML_LLM_DETECT_THRESHOLD: float = Field(default=0.5)
+
+    # RLHF Configuration
+    RLHF_MIN_EXAMPLES: int = Field(default=10)
+    RLHF_TRAIN_INTERVAL_HOURS: float = Field(default=6.0)
+    RLHF_LEARNING_RATE: float = Field(default=5e-4)
+    RLHF_EPOCHS: int = Field(default=15)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
