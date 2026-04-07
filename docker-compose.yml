@@ -128,10 +128,7 @@ services:
 
   # ─── Celery Worker (RLHF training + async tasks) ─────────────────────────
   celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    image: eta_backend:latest   # reuse the same built image – no separate build
+    image: eta_backend:latest   # reuse the image built by the backend service
     container_name: eta_celery
     restart: unless-stopped
     # Fixed module path: app.workers.celery_app (not app.worker)
@@ -152,6 +149,8 @@ services:
       - NEO4J_PASSWORD=emailthreat123
       - ML_MODEL_DIR=/app/ml_models
     depends_on:
+      backend:
+        condition: service_started
       redis:
         condition: service_healthy
       postgres:
@@ -163,10 +162,7 @@ services:
 
   # ─── Celery Beat (periodic tasks – auto RLHF training every 6 h) ─────────
   celery_beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    image: eta_backend:latest
+    image: eta_backend:latest   # reuse the image built by the backend service
     container_name: eta_celery_beat
     restart: unless-stopped
     command: >
@@ -182,6 +178,8 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
       - ML_MODEL_DIR=/app/ml_models
     depends_on:
+      backend:
+        condition: service_started
       redis:
         condition: service_healthy
     volumes:
