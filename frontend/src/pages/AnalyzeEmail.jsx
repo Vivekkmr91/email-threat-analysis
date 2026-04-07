@@ -4,7 +4,20 @@ import VerdictBadge from '../components/VerdictBadge';
 import ScoreGauge from '../components/ScoreGauge';
 import AgentCard from '../components/AgentCard';
 import { formatDuration, categoryLabels, formatDate } from '../utils/helpers';
-import ReactMarkdown from 'react-markdown';
+// Simple markdown-to-HTML renderer (avoids ESM-only react-markdown v9 issues)
+const SimpleMarkdown = ({ children }) => {
+  if (!children) return null;
+  const html = String(children)
+    .replace(/^### (.+)$/gm, '<h3 style="color:#93c5fd;font-size:13px;margin:10px 0 4px">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="color:#e2e8f0;font-size:14px;margin:12px 0 4px">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="color:#f1f5f9;font-size:15px;margin:14px 0 4px">$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e2e8f0">$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^[-*] (.+)$/gm, '<li style="margin-left:14px">$1</li>')
+    .replace(/\n/g, '<br/>');
+  // eslint-disable-next-line react/no-danger
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+};
 
 const SAMPLE_PHISHING = {
   subject: "URGENT: Verify Your Account - Unusual Activity Detected",
@@ -286,7 +299,7 @@ export default function AnalyzeEmail() {
               background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8,
               padding: 16, fontSize: 12, lineHeight: 1.7, color: '#94a3b8', maxHeight: 400, overflowY: 'auto',
             }}>
-              <ReactMarkdown>{result.reasoning_trace || 'No reasoning trace available'}</ReactMarkdown>
+              <SimpleMarkdown>{result.reasoning_trace || 'No reasoning trace available'}</SimpleMarkdown>
             </div>
           )}
 

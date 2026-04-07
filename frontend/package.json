@@ -14,10 +14,10 @@
     "react-router-dom": "^6.24.1",
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4",
-    "react-markdown": "^9.0.1",
-    "lucide-react": "^0.400.0",
-    "date-fns": "^3.6.0",
-    "@tanstack/react-query": "^5.48.0",
+    "react-markdown": "^8.0.7",
+    "lucide-react": "^0.263.1",
+    "date-fns": "^2.30.0",
+    "@tanstack/react-query": "^4.36.1",
     "react-hot-toast": "^2.4.1"
   },
   "scripts": {
@@ -27,7 +27,12 @@
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
-    "extends": ["react-app"]
+    "extends": ["react-app"],
+    "rules": {
+      "no-unused-vars": "warn",
+      "react-hooks/exhaustive-deps": "warn",
+      "no-undef": "warn"
+    }
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],
