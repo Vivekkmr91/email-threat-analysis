@@ -3,9 +3,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  // Vite serves from /src/index.jsx - we keep src/index.js as the entry
   build: {
-    outDir: 'build',          // keep same output dir as CRA for Nginx COPY
+    outDir: 'build',      // match CRA output dir — Nginx COPY stays unchanged
     sourcemap: false,
   },
   server: {
@@ -17,7 +16,7 @@ export default defineConfig({
       },
     },
   },
-  // Expose env vars prefixed with REACT_APP_ so existing api.js still works
+  // Expose REACT_APP_* env vars so existing utils/api.js works without changes
   define: {
     'process.env.REACT_APP_API_URL': JSON.stringify(
       process.env.REACT_APP_API_URL || '/api/v1'
