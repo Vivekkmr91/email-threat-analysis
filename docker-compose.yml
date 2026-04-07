@@ -1,7 +1,20 @@
-version: '3.9'
+# Docker Compose – Multi-Agent Email Threat Analysis System
+# Tested with Docker Desktop 4.x (Windows/Mac) and Docker Engine 24+ (Linux)
+#
+# Quick start:
+#   cp .env.example .env          # fill in API keys
+#   docker compose up -d          # start all services
+#   docker compose logs -f        # tail logs
+#
+# Services & ports:
+#   Frontend  → http://localhost:80
+#   Backend   → http://localhost:8000  (API docs: /redoc)
+#   Neo4j     → http://localhost:7474
+#   Grafana   → http://localhost:3001  (admin / admin123)
+#   Prometheus→ http://localhost:9090
 
 services:
-  # ─── PostgreSQL Database ──────────────────────────────────────────────────
+  # ─── PostgreSQL ──────────────────────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
     container_name: eta_postgres
@@ -23,12 +36,16 @@ services:
     networks:
       - eta_network
 
-  # ─── Redis Cache & Queue ──────────────────────────────────────────────────
+  # ─── Redis ───────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: eta_redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
@@ -41,7 +58,7 @@ services:
     networks:
       - eta_network
 
-  # ─── Neo4j Graph Database ─────────────────────────────────────────────────
+  # ─── Neo4j ───────────────────────────────────────────────────────────────
   neo4j:
     image: neo4j:5.20-community
     container_name: eta_neo4j
@@ -58,8 +75,8 @@ services:
       - neo4j_logs:/logs
       - neo4j_plugins:/plugins
     ports:
-      - "7474:7474"  # HTTP (Browser)
-      - "7687:7687"  # Bolt (Driver)
+      - "7474:7474"
+      - "7687:7687"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
       interval: 30s
@@ -69,28 +86,27 @@ services:
     networks:
       - eta_network
 
-  # ─── Backend API ──────────────────────────────────────────────────────────
+  # ─── Backend API ─────────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: eta_backend:latest
     container_name: eta_backend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - DEBUG=false
       - ENVIRONMENT=production
       - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USERNAME=neo4j
       - NEO4J_PASSWORD=emailthreat123
       - ALLOWED_ORIGINS=["http://localhost:80","http://localhost:3000","http://frontend:80"]
-      # Set your API keys here or use .env file
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
-      - PHISHTANK_API_KEY=${PHISHTANK_API_KEY:-}
-      - SECRET_KEY=${SECRET_KEY:-changeme-32char-secret-key-here!!}
-      - ALLOWED_API_KEYS=${ALLOWED_API_KEYS:-["demo-api-key-change-in-production"]}
+      - ML_MODEL_DIR=/app/ml_models
     ports:
       - "8000:8000"
     depends_on:
@@ -98,24 +114,87 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      neo4j:
-        condition: service_healthy
+      # Neo4j is optional at startup – backend handles its absence gracefully
     volumes:
-      - ./backend:/app:ro
+      - ml_models:/app/ml_models
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     networks:
       - eta_network
 
-  # ─── Frontend Dashboard ────────────────────────────────────────────────────
+  # ─── Celery Worker (RLHF training + async tasks) ─────────────────────────
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: eta_backend:latest   # reuse the same built image – no separate build
+    container_name: eta_celery
+    restart: unless-stopped
+    # Fixed module path: app.workers.celery_app (not app.worker)
+    command: >
+      celery -A app.workers.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --queues=celery
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=emailthreat123
+      - ML_MODEL_DIR=/app/ml_models
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ml_models:/app/ml_models
+    networks:
+      - eta_network
+
+  # ─── Celery Beat (periodic tasks – auto RLHF training every 6 h) ─────────
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: eta_backend:latest
+    container_name: eta_celery_beat
+    restart: unless-stopped
+    command: >
+      celery -A app.workers.celery_app beat
+      --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - ML_MODEL_DIR=/app/ml_models
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ml_models:/app/ml_models
+    networks:
+      - eta_network
+
+  # ─── Frontend Dashboard ───────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: eta_frontend:latest
     container_name: eta_frontend
     restart: unless-stopped
     ports:
@@ -126,33 +205,7 @@ services:
     networks:
       - eta_network
 
-  # ─── Celery Worker (Async Tasks) ──────────────────────────────────────────
-  celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: eta_celery
-    restart: unless-stopped
-    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
-      - REDIS_URL=redis://redis:6379/0
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USERNAME=neo4j
-      - NEO4J_PASSWORD=emailthreat123
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    networks:
-      - eta_network
-
-  # ─── Prometheus Metrics ───────────────────────────────────────────────────
+  # ─── Prometheus ───────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: eta_prometheus
@@ -168,7 +221,7 @@ services:
     networks:
       - eta_network
 
-  # ─── Grafana Dashboard ────────────────────────────────────────────────────
+  # ─── Grafana ──────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.0
     container_name: eta_grafana
@@ -187,6 +240,7 @@ services:
     networks:
       - eta_network
 
+# ─── Named volumes ────────────────────────────────────────────────────────────
 volumes:
   postgres_data:
     name: eta_postgres_data
@@ -202,7 +256,10 @@ volumes:
     name: eta_prometheus_data
   grafana_data:
     name: eta_grafana_data
+  ml_models:
+    name: eta_ml_models   # persists trained ML model checkpoints
 
+# ─── Networks ────────────────────────────────────────────────────────────────
 networks:
   eta_network:
     name: eta_network

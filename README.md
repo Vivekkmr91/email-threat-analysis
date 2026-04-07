@@ -57,8 +57,9 @@
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
-- 4GB RAM minimum
+- **Docker Desktop 4.x** (Windows/Mac) or **Docker Engine 24+** (Linux)
+- Docker Desktop must be **running** before executing any `docker compose` commands
+- 4 GB RAM minimum (8 GB recommended with Neo4j)
 - Optional: OpenAI API key, VirusTotal API key
 
 ### 1. Clone & Configure
@@ -66,9 +67,9 @@
 git clone https://github.com/Vivekkmr91/email-threat-analysis.git
 cd email-threat-analysis
 
-# Configure environment
+# Configure environment (copy the example and optionally add API keys)
 cp .env.example .env
-# Edit .env with your API keys (OPENAI_API_KEY, VIRUSTOTAL_API_KEY, etc.)
+# nano .env   # add OPENAI_API_KEY, VIRUSTOTAL_API_KEY etc. as desired
 ```
 
 ### 2. Start All Services
@@ -76,15 +77,24 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### 3. Access the System
+First run pulls/builds images (~3–5 min). Subsequent starts are fast.
+
+### 3. Verify Everything Is Up
+```bash
+docker compose ps          # all services should show "healthy" or "running"
+docker compose logs -f     # tail logs (Ctrl+C to exit)
+```
+
+### 4. Access the System
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| **SOC Dashboard** | http://localhost:80 | - |
-| **API Documentation** | http://localhost:8000/redoc | - |
+| **SOC Dashboard** | http://localhost:80 | — |
+| **API Docs** | http://localhost:8000/redoc | — |
 | **Neo4j Browser** | http://localhost:7474 | neo4j / emailthreat123 |
 | **Grafana** | http://localhost:3001 | admin / admin123 |
+| **Prometheus** | http://localhost:9090 | — |
 
-### 4. Analyze Your First Email
+### 5. Analyze Your First Email
 ```bash
 curl -X POST http://localhost:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
@@ -97,6 +107,56 @@ curl -X POST http://localhost:8000/api/v1/analyze \
       "Reply-To": "attacker@evil.tk"
     }
   }'
+```
+
+### 6. ML-only fast prediction
+```bash
+curl -X POST http://localhost:8000/api/v1/ml/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Your invoice is overdue",
+    "body_text": "Please wire $25,000 to the new account immediately.",
+    "sender": "cfo@company-fake.com"
+  }'
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Docker Desktop not running (Windows/Mac)
+```
+error during connect: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified
+```
+**Fix:** Start Docker Desktop and wait for the whale icon in the system tray to show "Docker Desktop is running", then re-run `docker compose up -d`.
+
+### `version` attribute warning
+```
+the attribute `version` is obsolete, it will be ignored
+```
+**This is just a warning, not an error.** The `version` key has been removed from `docker-compose.yml` in this repo.
+
+### Port already in use
+```bash
+# Find and kill the process using port 8000 (or 80, 5432, 6379, 7474, 7687)
+# Windows
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+
+# Linux/Mac
+lsof -i :8000 | awk 'NR>1 {print $2}' | xargs kill -9
+```
+
+### Backend unhealthy / keeps restarting
+```bash
+docker compose logs backend   # see the actual error
+docker compose logs postgres  # check DB is up
+```
+
+### Reset everything (fresh start)
+```bash
+docker compose down -v        # removes containers AND volumes
+docker compose up -d          # start fresh
 ```
 
 ## 📁 Project Structure
