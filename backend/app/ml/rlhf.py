@@ -36,7 +36,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -347,7 +347,7 @@ class RLHFTrainer:
         self._last_train_ts = time.time()
 
         # Bump model version
-        new_version = f"rlhf-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        new_version = f"rlhf-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
         self._registry.update_weights(version=new_version)
 
         result = {
@@ -359,7 +359,7 @@ class RLHFTrainer:
             "lr":                   lr,
             "train_result":         train_result,
             "reward_stats":         reward_stats,
-            "timestamp":            datetime.utcnow().isoformat(),
+            "timestamp":            datetime.now(timezone.utc).isoformat(),
         }
 
         logger.info("RLHF training cycle complete", **{

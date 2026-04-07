@@ -22,14 +22,12 @@ class Settings(BaseSettings):
 
     # CORS
     ALLOWED_ORIGINS: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:80", "http://frontend:3000"],
-        env="ALLOWED_ORIGINS"
+        default=["http://localhost:3000", "http://localhost:80", "http://frontend:3000"]
     )
 
     # Database (PostgreSQL)
     DATABASE_URL: str = Field(
-        default="postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat",
-        env="DATABASE_URL"
+        default="postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat"
     )
 
     # Redis

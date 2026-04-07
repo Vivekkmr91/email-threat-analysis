@@ -4,7 +4,7 @@ FastAPI route definitions for the Email Threat Analysis API.
 import uuid
 import time
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status
 from fastapi.responses import JSONResponse
@@ -63,7 +63,7 @@ async def health_check():
         status=overall_status,
         version=settings.APP_VERSION,
         services=services,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
 
 
@@ -175,7 +175,7 @@ async def list_analyses(
 ):
     """List all email analyses with pagination and filtering."""
     filters = []
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
     filters.append(EmailAnalysis.created_at >= since)
 
     if verdict:
@@ -258,7 +258,7 @@ async def submit_feedback(
 
     record.analyst_feedback = feedback.feedback_type.value
     record.analyst_notes = feedback.notes
-    record.feedback_at = datetime.utcnow()
+    record.feedback_at = datetime.now(timezone.utc)
     record.feedback_by = feedback.analyst_id or "anonymous"
 
     await db.commit()
@@ -285,7 +285,7 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Get aggregated statistics for the SOC dashboard."""
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Total counts
     total_stmt = select(func.count()).select_from(EmailAnalysis).where(
@@ -411,7 +411,7 @@ def _build_analysis_response(analysis_id: str, result: dict) -> EmailAnalysisRes
 
     return EmailAnalysisResponse(
         analysis_id=analysis_id,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         verdict=verdict_enum,
         threat_score=float(result.get("threat_score", 0)),
         threat_categories=categories,
