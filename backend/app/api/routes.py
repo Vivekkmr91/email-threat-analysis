@@ -3,6 +3,7 @@ FastAPI route definitions for the Email Threat Analysis API.
 """
 import uuid
 import time
+import asyncio
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 
@@ -31,33 +32,58 @@ router = APIRouter()
 
 # ─── Health Check ────────────────────────────────────────────────────────────
 
-@router.get("/health", response_model=HealthResponse, tags=["System"])
-async def health_check():
-    """System health check endpoint."""
-    services = {}
-
-    # Check Neo4j
-    try:
+async def _check_neo4j(timeout: float = 3.0) -> str:
+    """Check Neo4j connectivity with a strict timeout so it never hangs."""
+    async def _probe():
         driver = await get_neo4j_driver()
         async with driver.session() as session:
-            await session.run("RETURN 1")
-        services["neo4j"] = "healthy"
-    except Exception:
-        services["neo4j"] = "unhealthy"
+            result = await session.run("RETURN 1")
+            await result.consume()
 
-    # Check Redis
+    try:
+        await asyncio.wait_for(_probe(), timeout=timeout)
+        return "healthy"
+    except Exception:
+        return "unhealthy"
+
+
+async def _check_redis(timeout: float = 3.0) -> str:
+    """Check Redis connectivity with a strict timeout."""
     try:
         import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.REDIS_URL)
-        await r.ping()
+        r = aioredis.from_url(settings.REDIS_URL, socket_connect_timeout=timeout)
+        await asyncio.wait_for(r.ping(), timeout=timeout)
         await r.aclose()
-        services["redis"] = "healthy"
+        return "healthy"
     except Exception:
-        services["redis"] = "unhealthy"
+        return "unhealthy"
 
-    services["api"] = "healthy"
 
-    overall_status = "healthy" if all(v == "healthy" for v in services.values()) else "degraded"
+@router.get("/health", response_model=HealthResponse, tags=["System"])
+async def health_check():
+    """
+    System health check endpoint.
+
+    Returns HTTP 200 in all cases so Docker's healthcheck never blocks startup.
+    Status field is 'healthy' when all core services are reachable, or 'degraded'
+    when optional services (e.g. Neo4j on first boot) are still initialising.
+    """
+    # Run Neo4j and Redis checks in parallel, each with a 3-second hard cap.
+    neo4j_status, redis_status = await asyncio.gather(
+        _check_neo4j(timeout=3.0),
+        _check_redis(timeout=3.0),
+    )
+
+    services = {
+        "api":   "healthy",
+        "redis": redis_status,
+        "neo4j": neo4j_status,   # Neo4j is optional; may be "unhealthy" early on
+    }
+
+    # The container is considered healthy as long as Redis + API are up.
+    # Neo4j being slow to start should NOT mark the backend as unhealthy.
+    core_healthy = services["api"] == "healthy" and services["redis"] == "healthy"
+    overall_status = "healthy" if core_healthy else "degraded"
 
     return HealthResponse(
         status=overall_status,

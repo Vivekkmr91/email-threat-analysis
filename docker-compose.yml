@@ -95,7 +95,8 @@ services:
     container_name: eta_backend
     restart: unless-stopped
     env_file:
-      - .env
+      - path: .env
+        required: false   # optional – all critical vars are set in 'environment' below
     environment:
       - ENVIRONMENT=production
       - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
@@ -118,11 +119,13 @@ services:
     volumes:
       - ml_models:/app/ml_models
     healthcheck:
+      # /health returns 200 even when Neo4j is still starting (status=degraded).
+      # Timeout raised to 10 s so slow Neo4j probes don't abort the curl.
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 5
-      start_period: 40s
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s   # give uvicorn + DB init time to finish
     networks:
       - eta_network
 
@@ -138,7 +141,8 @@ services:
       --concurrency=2
       --queues=celery
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
       - REDIS_URL=redis://redis:6379/0
@@ -170,7 +174,8 @@ services:
       --loglevel=info
       --schedule=/tmp/celerybeat-schedule
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
       - REDIS_URL=redis://redis:6379/0

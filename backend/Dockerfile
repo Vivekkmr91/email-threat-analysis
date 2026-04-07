@@ -33,8 +33,9 @@ RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
-# Health check uses the correct API path
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+# Health check – /health always returns 200 (neo4j may show "degraded" but
+# that is still a 200 response, so curl -f passes).
+HEALTHCHECK --interval=15s --timeout=10s --start-period=60s --retries=8 \
     CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
 EXPOSE 8000
