@@ -56,11 +56,17 @@
 
 ## 🚀 Quick Start
 
-### Prerequisites
+**Two deployment options:**
+- **🐳 Docker (Recommended)**: One-command deployment, zero config hassle
+- **💻 Local Development**: Full control, hot reload, ideal for development → [See Local Development Guide](#-local-development-without-docker)
+
+### Docker Deployment (Production-Ready)
+
+#### Prerequisites
 - **Docker Desktop 4.x** (Windows/Mac) or **Docker Engine 24+** (Linux)
 - Docker Desktop must be **running** before executing any `docker compose` commands
 - 4 GB RAM minimum (8 GB recommended with Neo4j)
-- Optional: OpenAI API key, VirusTotal API key
+- Optional: OpenAI API key, VirusTotal API key, or OpenRouter API key (free)
 
 ### 1. Clone & Configure
 ```bash
@@ -69,8 +75,19 @@ cd email-threat-analysis
 
 # Configure environment (copy the example and optionally add API keys)
 cp .env.example .env
-# nano .env   # add OPENAI_API_KEY, VIRUSTOTAL_API_KEY etc. as desired
 ```
+
+**Optional: Add LLM API key** (edit `.env`):
+```env
+# Option 1: OpenRouter (FREE models available - recommended for testing)
+OPENROUTER_API_KEY=sk-or-v1-your-key-from-openrouter.ai
+OPENROUTER_MODEL=google/gemma-3-27b-it:free
+
+# Option 2: OpenAI (requires paid API key)
+# OPENAI_API_KEY=sk-your-openai-key-here
+# OPENAI_MODEL=gpt-4o-mini
+```
+Get free OpenRouter key at: https://openrouter.ai/keys
 
 ### 2. Start All Services
 ```bash
@@ -88,7 +105,7 @@ docker compose logs -f     # tail logs (Ctrl+C to exit)
 ### 4. Access the System
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| **SOC Dashboard** | http://localhost:80 | — |
+| **SOC Dashboard** | http://localhost:8080 | — |
 | **API Docs** | http://localhost:8000/redoc | — |
 | **Neo4j Browser** | http://localhost:7474 | neo4j / emailthreat123 |
 | **Grafana** | http://localhost:3001 | admin / admin123 |
@@ -98,6 +115,7 @@ docker compose logs -f     # tail logs (Ctrl+C to exit)
 ```bash
 curl -X POST http://localhost:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: demo-api-key-change-in-production" \
   -d '{
     "subject": "URGENT: Verify Your Account",
     "sender": "security@paypa1.com",
@@ -113,12 +131,388 @@ curl -X POST http://localhost:8000/api/v1/analyze \
 ```bash
 curl -X POST http://localhost:8000/api/v1/ml/predict \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: demo-api-key-change-in-production" \
   -d '{
     "subject": "Your invoice is overdue",
     "body_text": "Please wire $25,000 to the new account immediately.",
     "sender": "cfo@company-fake.com"
   }'
 ```
+
+---
+
+## 💻 Local Development (Without Docker)
+
+This project is fully compatible with local development without Docker. The code follows 12-factor app principles and reads all configuration from environment variables.
+
+### Prerequisites
+
+- **Python 3.11+** ([python.org](https://python.org))
+- **Node.js 18+** and npm ([nodejs.org](https://nodejs.org))
+- **PostgreSQL 15+** ([postgresql.org](https://www.postgresql.org/download/))
+- **Redis 7+** ([redis.io](https://redis.io/download/))
+- **Neo4j Desktop** or Community Edition 5.x ([neo4j.com](https://neo4j.com/download/))
+- **Git** for cloning the repo
+
+### Step 1: Install System Dependencies
+
+#### Windows
+```powershell
+# Install PostgreSQL 15
+# Download installer from https://www.postgresql.org/download/windows/
+# During installation, remember the postgres password
+
+# Install Redis (via WSL2 or Memurai for native Windows)
+# Option A: WSL2 + Ubuntu
+wsl --install
+wsl -d Ubuntu
+sudo apt update && sudo apt install redis-server -y
+sudo service redis-server start
+
+# Option B: Memurai (Windows native Redis)
+# Download from https://www.memurai.com/get-memurai
+
+# Install Neo4j Desktop
+# Download from https://neo4j.com/download/
+# Create a new database with password: emailthreat123
+```
+
+#### Linux (Ubuntu/Debian)
+```bash
+# PostgreSQL
+sudo apt update
+sudo apt install postgresql postgresql-contrib -y
+sudo systemctl start postgresql
+
+# Redis
+sudo apt install redis-server -y
+sudo systemctl start redis-server
+
+# Neo4j (Community Edition)
+wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo apt-key add -
+echo 'deb https://debian.neo4j.com stable latest' | sudo tee /etc/apt/sources.list.d/neo4j.list
+sudo apt update
+sudo apt install neo4j -y
+sudo systemctl start neo4j
+```
+
+#### macOS
+```bash
+# Install Homebrew if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# PostgreSQL
+brew install postgresql@15
+brew services start postgresql@15
+
+# Redis
+brew install redis
+brew services start redis
+
+# Neo4j
+brew install --cask neo4j
+```
+
+### Step 2: Configure Databases
+
+#### PostgreSQL Setup
+```bash
+# Create database and user
+psql -U postgres
+```
+```sql
+CREATE DATABASE emailthreat;
+CREATE USER emailthreat WITH PASSWORD 'emailthreat';
+GRANT ALL PRIVILEGES ON DATABASE emailthreat TO emailthreat;
+\q
+```
+
+#### Neo4j Setup
+```bash
+# If using Neo4j Desktop:
+# 1. Create a new project
+# 2. Add a local database
+# 3. Set password to: emailthreat123
+# 4. Start the database
+
+# If using Neo4j Community (Linux/Mac):
+sudo neo4j-admin set-initial-password emailthreat123
+```
+
+### Step 3: Clone & Configure Backend
+
+```bash
+git clone https://github.com/Vivekkmr91/email-threat-analysis.git
+cd email-threat-analysis
+
+# Create backend .env file
+cp .env.example .env
+```
+
+Edit `.env` with **localhost** connection strings:
+```env
+# Core Settings
+DEBUG=true
+ENVIRONMENT=development
+SECRET_KEY=your-dev-secret-key-here
+ALLOWED_API_KEYS=["local-dev-api-key"]
+ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:8080"]
+
+# Database URLs (localhost for local dev)
+DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@localhost:5432/emailthreat
+REDIS_URL=redis://localhost:6379/0
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=emailthreat123
+
+# Celery (using Redis)
+CELERY_BROKER_URL=redis://localhost:6379/1
+CELERY_RESULT_BACKEND=redis://localhost:6379/2
+
+# LLM Provider (choose one)
+# Option 1: OpenRouter (FREE models available)
+OPENROUTER_API_KEY=sk-or-v1-your-openrouter-key-here
+OPENROUTER_MODEL=google/gemma-3-27b-it:free
+
+# Option 2: OpenAI (requires paid API key)
+# OPENAI_API_KEY=sk-your-openai-key-here
+# OPENAI_MODEL=gpt-4o-mini
+
+# Optional: External APIs
+VIRUSTOTAL_API_KEY=your-virustotal-key
+PHISHTANK_API_KEY=your-phishtank-key
+
+# Risk Thresholds
+HIGH_RISK_THRESHOLD=0.75
+MEDIUM_RISK_THRESHOLD=0.45
+ANALYSIS_TIMEOUT_SECONDS=30
+RATE_LIMIT_PER_MINUTE=60
+
+# ML Model Settings
+ML_MODEL_DIR=./ml_models
+ML_PHISHING_THRESHOLD=0.5
+ML_LLM_DETECT_THRESHOLD=0.5
+
+# RLHF Training
+RLHF_MIN_EXAMPLES=10
+RLHF_TRAIN_INTERVAL_HOURS=6
+RLHF_LEARNING_RATE=0.0005
+RLHF_EPOCHS=15
+```
+
+### Step 4: Install Backend Dependencies
+
+```bash
+cd backend
+python -m venv venv
+
+# Activate virtual environment
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+# Windows CMD:
+.\venv\Scripts\activate.bat
+# Linux/Mac:
+source venv/bin/activate
+
+# Install packages
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Create ML models directory
+mkdir -p ml_models
+```
+
+### Step 5: Initialize Database
+
+```bash
+# Still in backend/ with venv activated
+# The database tables will be created automatically on first run
+# Or manually trigger with:
+python -c "from app.core.database import init_db, init_neo4j_schema; import asyncio; asyncio.run(init_db()); asyncio.run(init_neo4j_schema())"
+```
+
+### Step 6: Start Backend Services
+
+Open **3 terminal windows** (all with activated venv in `backend/`):
+
+**Terminal 1: FastAPI Server**
+```bash
+cd backend
+source venv/bin/activate  # or .\venv\Scripts\Activate.ps1 on Windows
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Terminal 2: Celery Worker**
+```bash
+cd backend
+source venv/bin/activate
+celery -A app.workers.celery_app worker --loglevel=info --concurrency=2 --queues=celery
+```
+
+**Terminal 3: Celery Beat (scheduler)**
+```bash
+cd backend
+source venv/bin/activate
+celery -A app.workers.celery_app beat --loglevel=info
+```
+
+### Step 7: Configure Frontend
+
+```bash
+# New terminal window
+cd frontend
+
+# Create local environment file
+cat > .env.local << EOF
+REACT_APP_API_URL=http://localhost:8000/api/v1
+REACT_APP_API_KEY=local-dev-api-key
+EOF
+
+# Install dependencies
+npm install --legacy-peer-deps
+```
+
+### Step 8: Start Frontend Dev Server
+
+```bash
+# Still in frontend/
+npm run dev
+```
+
+The Vite dev server will start on **http://localhost:3000**
+
+### Step 9: Verify Everything Works
+
+#### Health Check
+```bash
+curl http://localhost:8000/api/v1/health
+```
+Expected output:
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "services": {
+    "api": "healthy",
+    "redis": "healthy",
+    "neo4j": "healthy"
+  },
+  "timestamp": "2026-04-08T..."
+}
+```
+
+#### Test Email Analysis
+```bash
+curl -X POST http://localhost:8000/api/v1/analyze \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: local-dev-api-key" \
+  -d '{
+    "subject": "URGENT: Verify Your PayPal Account",
+    "sender": "security@paypa1-verify.com",
+    "recipients": ["victim@company.com"],
+    "body_text": "Your account has been suspended. Click here immediately: https://paypa1-secure.xyz/verify",
+    "headers": {
+      "SPF": "fail",
+      "DKIM-Signature": "none"
+    },
+    "source": "api"
+  }'
+```
+
+### Local Development URLs
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| **Frontend Dashboard** | http://localhost:3000 | — |
+| **Backend API** | http://localhost:8000 | — |
+| **API Docs (ReDoc)** | http://localhost:8000/redoc | — |
+| **Swagger UI** | http://localhost:8000/docs | — |
+| **Neo4j Browser** | http://localhost:7474 | neo4j / emailthreat123 |
+| **PostgreSQL** | localhost:5432 | emailthreat / emailthreat |
+| **Redis** | localhost:6379 | (no auth in dev) |
+
+### Running Tests Locally
+
+```bash
+# Backend tests (with venv activated)
+cd backend
+pytest tests/ -v --cov=app --cov-report=html
+# View coverage report at: htmlcov/index.html
+
+# Frontend tests
+cd frontend
+npm test
+
+# Type checking (frontend)
+npm run type-check
+```
+
+### Stopping Services
+
+```bash
+# Stop each terminal with Ctrl+C
+# Deactivate Python virtual environment:
+deactivate
+
+# Stop system services (if needed)
+# Windows (Memurai):
+net stop Memurai
+
+# Linux:
+sudo systemctl stop postgresql redis-server neo4j
+
+# macOS:
+brew services stop postgresql@15 redis neo4j
+```
+
+### Key Differences: Docker vs. Local
+
+| Aspect | Docker (Production) | Local Development |
+|--------|---------------------|-------------------|
+| **Database URLs** | Service names (`postgres:5432`) | `localhost:5432` |
+| **Environment** | Set to `production` | Set to `development` |
+| **API Key** | Strong key required | `local-dev-api-key` |
+| **Debug Mode** | `DEBUG=false` | `DEBUG=true` |
+| **Volumes** | Named Docker volumes | Local directories |
+| **Networking** | Bridge network | Host network (localhost) |
+| **Process Management** | Docker handles restart | Manual terminal management |
+| **Hot Reload** | Requires rebuild | Automatic (uvicorn --reload, Vite HMR) |
+
+### Why No Code Changes Are Needed
+
+✅ **Zero code modifications** required to switch between Docker and local development:
+
+1. **Environment-based configuration**: All connection strings, API keys, and settings are read from environment variables via `pydantic-settings`.
+
+2. **CORS origins**: `ALLOWED_ORIGINS` in `.env` accepts both Docker hostnames and localhost URLs.
+
+3. **Database abstraction**: SQLAlchemy and Neo4j drivers accept any URI format (Docker service names or localhost).
+
+4. **Frontend proxy**: Vite's `proxy` config in `vite.config.ts` routes `/api` requests to the backend URL specified in `REACT_APP_API_URL`.
+
+5. **API authentication**: The same `X-API-Key` header mechanism works in both environments; just use different keys (strong for production, simple for dev).
+
+6. **LLM provider flexibility**: The `get_llm()` factory function detects available API keys (`OPENROUTER_API_KEY` or `OPENAI_API_KEY`) and configures the appropriate provider automatically.
+
+### Recommended Free LLM Models (via OpenRouter)
+
+Get a free API key at [openrouter.ai](https://openrouter.ai/):
+
+```env
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+OPENROUTER_MODEL=google/gemma-3-27b-it:free
+```
+
+**Top Free Models** (no cost per request):
+- `google/gemma-3-27b-it:free` (default, 27B parameters, excellent reasoning)
+- `google/gemma-3-12b-it:free` (smaller, faster)
+- `thudm/glm-z1-32b:free` (Chinese NLP specialist, good for phishing)
+- `meta-llama/llama-4-scout:free` (Meta's latest)
+- `deepseek/deepseek-r1:free` (reasoning-optimized)
+- `mistralai/mistral-7b-instruct:free` (7B, very fast)
+- `qwen/qwen3-235b-a22b:free` (235B, strongest free model)
+
+To switch models, just change `OPENROUTER_MODEL` in `.env` and restart the backend — **no code changes**.
 
 ---
 
