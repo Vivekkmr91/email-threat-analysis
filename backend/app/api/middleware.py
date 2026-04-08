@@ -18,11 +18,23 @@ logger = structlog.get_logger(__name__)
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Simple API key authentication middleware."""
 
-    EXCLUDED_PATHS = {"/health", "/docs", "/openapi.json", "/redoc", "/"}
+    # Paths that bypass API-key auth.
+    # Include both bare paths AND the /api/v1-prefixed versions so the
+    # Docker healthcheck (curl /api/v1/health) is never blocked.
+    EXCLUDED_PATHS = {
+        "/",
+        "/health",
+        "/api/v1/health",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+    }
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip auth for excluded paths
-        if request.url.path in self.EXCLUDED_PATHS:
+        path = request.url.path
+
+        # Skip auth for excluded paths (exact match or health-check prefix)
+        if path in self.EXCLUDED_PATHS or path.endswith("/health"):
             return await call_next(request)
 
         # Skip in debug mode
