@@ -108,6 +108,14 @@ services:
       - NEO4J_PASSWORD=emailthreat123
       - ALLOWED_ORIGINS=["http://localhost:8080","http://localhost:3000","http://frontend:80"]
       - ML_MODEL_DIR=/app/ml_models
+      # ── LLM provider (set one in your .env file) ──────────────────────────
+      # OpenRouter – free OSS models (Gemma, GLM, Llama, Mistral, Qwen …)
+      # Get a free key at https://openrouter.ai → Dashboard → Keys
+      # - OPENROUTER_API_KEY=sk-or-v1-...
+      # - OPENROUTER_MODEL=google/gemma-3-27b-it:free
+      # OpenAI – fallback if OPENROUTER_API_KEY is not set
+      # - OPENAI_API_KEY=sk-...
+      # - OPENAI_MODEL=gpt-4o-mini
     ports:
       - "8000:8000"
     depends_on:
@@ -152,6 +160,7 @@ services:
       - NEO4J_USERNAME=neo4j
       - NEO4J_PASSWORD=emailthreat123
       - ML_MODEL_DIR=/app/ml_models
+      # LLM keys are inherited from .env – no need to repeat them here
     depends_on:
       backend:
         condition: service_started

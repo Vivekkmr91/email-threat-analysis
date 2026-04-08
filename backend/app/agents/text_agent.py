@@ -22,11 +22,11 @@ import time
 import re
 from typing import Dict, Any, List, Optional
 import structlog
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.state import EmailAnalysisState, AgentFindingState
 from app.core.config import settings
+from app.core.llm import get_llm
 
 logger = structlog.get_logger(__name__)
 
@@ -89,9 +89,9 @@ def run_text_analysis_agent(state: EmailAnalysisState) -> EmailAnalysisState:
     # ── Layer 1: Heuristic analysis ──────────────────────────────────────────
     heuristic_result = _run_heuristics(full_text, subject, parsed)
 
-    # ── Layer 2: LLM analysis (optional) ────────────────────────────────────
+    # ── Layer 2: LLM analysis (optional – OpenRouter or OpenAI) ─────────────
     llm_result: Dict[str, Any] = {}
-    if settings.OPENAI_API_KEY and len(full_text.strip()) > 20:
+    if settings.llm_provider != "none" and len(full_text.strip()) > 20:
         try:
             llm_result = _run_llm_analysis(full_text, subject, parsed)
         except Exception as e:
@@ -266,13 +266,10 @@ def _check_llm_generated(text: str) -> bool:
 # ─── Layer 2: LLM (GPT) ──────────────────────────────────────────────────────
 
 def _run_llm_analysis(text: str, subject: str, parsed: Dict) -> Dict[str, Any]:
-    """Use OpenAI LLM to analyze email for sophisticated threats."""
-    llm = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        temperature=settings.OPENAI_TEMPERATURE,
-        api_key=settings.OPENAI_API_KEY,
-        max_tokens=800,
-    )
+    """Use the configured LLM (OpenRouter or OpenAI) to analyse email threats."""
+    llm = get_llm(max_tokens=800)
+    if llm is None:
+        return {}
 
     system_prompt = """You are a cybersecurity expert specializing in email threat analysis.
 Analyze the provided email for:

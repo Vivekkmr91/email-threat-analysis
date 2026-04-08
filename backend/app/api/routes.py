@@ -68,16 +68,20 @@ async def health_check():
     Status field is 'healthy' when all core services are reachable, or 'degraded'
     when optional services (e.g. Neo4j on first boot) are still initialising.
     """
+    from app.core.llm import llm_provider_info
+
     # Run Neo4j and Redis checks in parallel, each with a 3-second hard cap.
     neo4j_status, redis_status = await asyncio.gather(
         _check_neo4j(timeout=3.0),
         _check_redis(timeout=3.0),
     )
 
+    llm_info = llm_provider_info()
     services = {
         "api":   "healthy",
         "redis": redis_status,
         "neo4j": neo4j_status,   # Neo4j is optional; may be "unhealthy" early on
+        "llm":   llm_info["provider"],   # openrouter | openai | none
     }
 
     # The container is considered healthy as long as Redis + API are up.
