@@ -5,6 +5,11 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
+# Build-time arguments — override in docker-compose with `args:`
+# REACT_APP_API_KEY must match ALLOWED_API_KEYS in the backend .env
+ARG REACT_APP_API_KEY=demo-api-key-change-in-production
+ARG REACT_APP_API_URL=/api/v1
+
 # Copy package manifests
 COPY package.json package-lock.json* ./
 
@@ -15,7 +20,10 @@ RUN npm install --legacy-peer-deps
 COPY . .
 
 # Build to /app/build  (outDir set in vite.config.js)
-RUN REACT_APP_API_URL=/api/v1 npm run build
+# Vite bakes REACT_APP_* into the JS bundle at build time via process.env shim
+RUN REACT_APP_API_URL=${REACT_APP_API_URL} \
+    REACT_APP_API_KEY=${REACT_APP_API_KEY} \
+    npm run build
 
 # ── Production stage ──────────────────────────────────────────────────────────
 FROM nginx:alpine

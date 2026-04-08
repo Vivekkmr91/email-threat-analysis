@@ -108,6 +108,11 @@ services:
       - NEO4J_PASSWORD=emailthreat123
       - ALLOWED_ORIGINS=["http://localhost:8080","http://localhost:3000","http://frontend:80"]
       - ML_MODEL_DIR=/app/ml_models
+      # ── API key – single source of truth ──────────────────────────────────
+      # Both the frontend (build arg) and backend (ALLOWED_API_KEYS) read
+      # ${API_KEY} from your .env file so they always stay in sync.
+      # Default works out-of-the-box; change it in .env for production.
+      - ALLOWED_API_KEYS=["${API_KEY:-demo-api-key-change-in-production}"]
       # ── LLM provider (set one in your .env file) ──────────────────────────
       # OpenRouter – free OSS models (Gemma, GLM, Llama, Mistral, Qwen …)
       # Get a free key at https://openrouter.ai → Dashboard → Keys
@@ -206,6 +211,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Must match ALLOWED_API_KEYS in backend environment / .env
+        # Vite bakes this into the JS bundle at build time.
+        REACT_APP_API_KEY: ${API_KEY:-demo-api-key-change-in-production}
+        REACT_APP_API_URL: /api/v1
     image: eta_frontend:latest
     container_name: eta_frontend
     restart: unless-stopped
