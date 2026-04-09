@@ -8,7 +8,7 @@ const navItems = [
   { path: '/graph', icon: '🕸️', label: 'Threat Graph' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onLogout, username }) {
   return (
     <aside style={{
       width: 220,
@@ -65,6 +65,25 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div style={{ padding: '12px 16px', borderTop: '1px solid #1e293b', fontSize: 11, color: '#475569' }}>
+        {username && <div style={{ marginBottom: 6 }}>Signed in as {username}</div>}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: '1px solid #334155',
+              background: '#0f172a',
+              color: '#e2e8f0',
+              cursor: 'pointer',
+              fontSize: 12,
+              marginBottom: 10,
+            }}
+          >
+            Sign out
+          </button>
+        )}
         <div>Multi-Agent AI</div>
         <div style={{ marginTop: 2 }}>LangGraph + Neo4j</div>
       </div>

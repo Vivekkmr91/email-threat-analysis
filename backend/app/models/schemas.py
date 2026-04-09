@@ -79,6 +79,18 @@ class FeedbackRequest(BaseModel):
     analyst_id: Optional[str] = Field(None, description="Analyst identifier")
 
 
+class LoginRequest(BaseModel):
+    """Login request for dashboard session auth."""
+    username: str
+    password: str
+
+
+class SessionResponse(BaseModel):
+    """Response with active session details."""
+    username: str
+    expires_at: datetime
+
+
 # ─── Response Schemas ────────────────────────────────────────────────────────
 
 class AgentFinding(BaseModel):

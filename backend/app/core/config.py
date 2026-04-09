@@ -19,12 +19,16 @@ class Settings(BaseSettings):
     DEBUG: bool      = Field(default=False)
     ENVIRONMENT: str = Field(default="production")
 
-    # ── API Security ─────────────────────────────────────────────────────────
-    SECRET_KEY: str          = Field(default="changeme-32char-secret-key-here!!")
-    API_KEY_HEADER: str      = "X-API-Key"
-    ALLOWED_API_KEYS: list[str] = Field(
-        default=["demo-api-key-change-in-production"]
-    )
+    # API Security
+    SECRET_KEY: str = Field(..., min_length=32)
+    API_KEY_HEADER: str = "X-API-Key"
+    ALLOWED_API_KEYS: list[str] = Field(default_factory=list)
+
+    # Dashboard session auth
+    DASHBOARD_USERNAME: str = Field(...)
+    DASHBOARD_PASSWORD: str = Field(...)
+    DASHBOARD_SESSION_TTL_MINUTES: int = Field(default=480)
+    SESSION_COOKIE_NAME: str = Field(default="eta_session")
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: list[str] = Field(
@@ -33,16 +37,17 @@ class Settings(BaseSettings):
 
     # ── Database (PostgreSQL) ─────────────────────────────────────────────────
     DATABASE_URL: str = Field(
-        default="postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat"
+        ...,
+        env="DATABASE_URL"
     )
 
     # ── Redis ────────────────────────────────────────────────────────────────
     REDIS_URL: str = Field(default="redis://redis:6379/0")
 
-    # ── Neo4j Graph Database ──────────────────────────────────────────────────
-    NEO4J_URI:      str = Field(default="bolt://neo4j:7687")
-    NEO4J_USERNAME: str = Field(default="neo4j")
-    NEO4J_PASSWORD: str = Field(default="emailthreat123")
+    # Neo4j Graph Database
+    NEO4J_URI: str = Field(default="bolt://neo4j:7687")
+    NEO4J_USERNAME: str = Field(...)
+    NEO4J_PASSWORD: str = Field(...)
     NEO4J_DATABASE: str = Field(default="neo4j")
 
     # ── OpenRouter (preferred – free OSS models) ──────────────────────────────
