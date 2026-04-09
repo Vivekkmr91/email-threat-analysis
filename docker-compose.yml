@@ -20,16 +20,16 @@ services:
     container_name: eta_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: emailthreat
-      POSTGRES_USER: emailthreat
-      POSTGRES_PASSWORD: emailthreat
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U emailthreat -d emailthreat"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -64,7 +64,7 @@ services:
     container_name: eta_neo4j
     restart: unless-stopped
     environment:
-      NEO4J_AUTH: neo4j/emailthreat123
+      NEO4J_AUTH: ${NEO4J_USERNAME:?set NEO4J_USERNAME in .env}/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_dbms_memory_heap_initial__size: 256m
@@ -98,29 +98,27 @@ services:
       - path: .env
         required: false   # optional – all critical vars are set in 'environment' below
     environment:
-      - ENVIRONMENT=production
-      - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USERNAME=neo4j
-      - NEO4J_PASSWORD=emailthreat123
-      - ALLOWED_ORIGINS=["http://localhost:8080","http://localhost:3000","http://frontend:80"]
-      - ML_MODEL_DIR=/app/ml_models
-      # ── API key – single source of truth ──────────────────────────────────
-      # Both the frontend (build arg) and backend (ALLOWED_API_KEYS) read
-      # ${API_KEY} from your .env file so they always stay in sync.
-      # Default works out-of-the-box; change it in .env for production.
-      - ALLOWED_API_KEYS=["${API_KEY:-demo-api-key-change-in-production}"]
-      # ── LLM provider (set one in your .env file) ──────────────────────────
-      # OpenRouter – free OSS models (Gemma, GLM, Llama, Mistral, Qwen …)
-      # Get a free key at https://openrouter.ai → Dashboard → Keys
-      # - OPENROUTER_API_KEY=sk-or-v1-...
-      # - OPENROUTER_MODEL=google/gemma-3-27b-it:free
-      # OpenAI – fallback if OPENROUTER_API_KEY is not set
-      # - OPENAI_API_KEY=sk-...
-      # - OPENAI_MODEL=gpt-4o-mini
+      - DEBUG=${DEBUG:-false}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DATABASE_URL=${DATABASE_URL:?set DATABASE_URL in .env}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
+      - NEO4J_USERNAME=${NEO4J_USERNAME:?set NEO4J_USERNAME in .env}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-["http://localhost:8080","http://localhost:3000","http://frontend:80"]}
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env}
+      - ALLOWED_API_KEYS=${ALLOWED_API_KEYS:-[]}
+      - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:?set DASHBOARD_USERNAME in .env}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
+      - DASHBOARD_SESSION_TTL_MINUTES=${DASHBOARD_SESSION_TTL_MINUTES:-480}
+      - ML_MODEL_DIR=${ML_MODEL_DIR:-/app/ml_models}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - PHISHTANK_API_KEY=${PHISHTANK_API_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -157,15 +155,14 @@ services:
       - path: .env
         required: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USERNAME=neo4j
-      - NEO4J_PASSWORD=emailthreat123
-      - ML_MODEL_DIR=/app/ml_models
-      # LLM keys are inherited from .env – no need to repeat them here
+      - DATABASE_URL=${DATABASE_URL:?set DATABASE_URL in .env}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
+      - NEO4J_USERNAME=${NEO4J_USERNAME:?set NEO4J_USERNAME in .env}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      - ML_MODEL_DIR=${ML_MODEL_DIR:-/app/ml_models}
     depends_on:
       backend:
         condition: service_started
@@ -191,11 +188,11 @@ services:
       - path: .env
         required: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://emailthreat:emailthreat@postgres:5432/emailthreat
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - ML_MODEL_DIR=/app/ml_models
+      - DATABASE_URL=${DATABASE_URL:?set DATABASE_URL in .env}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      - ML_MODEL_DIR=${ML_MODEL_DIR:-/app/ml_models}
     depends_on:
       backend:
         condition: service_started
@@ -212,9 +209,6 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Must match ALLOWED_API_KEYS in backend environment / .env
-        # Vite bakes this into the JS bundle at build time.
-        REACT_APP_API_KEY: ${API_KEY:-demo-api-key-change-in-production}
         REACT_APP_API_URL: /api/v1
     image: eta_frontend:latest
     container_name: eta_frontend
@@ -249,7 +243,7 @@ services:
     container_name: eta_grafana
     restart: unless-stopped
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana

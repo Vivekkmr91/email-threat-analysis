@@ -7,7 +7,7 @@ import asyncio
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status, Response, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_
@@ -19,15 +19,57 @@ from app.models.schemas import (
     EmailSubmitRequest, EmailAnalysisResponse, AnalysisListResponse,
     AnalysisListItem, FeedbackRequest, DashboardStats, AgentFinding,
     URLResult, AttachmentResult, ThreatVerdictEnum, ThreatCategoryEnum,
-    HealthResponse,
+    HealthResponse, LoginRequest, SessionResponse,
 )
 from app.agents.orchestrator import analyze_email
 from app.core.config import settings
 from app.core.database import get_neo4j_driver
+from app.api.middleware import create_session_token, verify_session_token
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+# ─── Authentication ──────────────────────────────────────────────────────────
+
+@router.post("/auth/login", response_model=SessionResponse, tags=["Auth"])
+async def login(request: LoginRequest, response: Response):
+    """Create a dashboard session and set an HTTP-only cookie."""
+    if request.username != settings.DASHBOARD_USERNAME or request.password != settings.DASHBOARD_PASSWORD:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    expires_at = datetime.utcnow() + timedelta(minutes=settings.DASHBOARD_SESSION_TTL_MINUTES)
+    token = create_session_token(request.username, settings.DASHBOARD_SESSION_TTL_MINUTES * 60)
+    response.set_cookie(
+        settings.SESSION_COOKIE_NAME,
+        token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.DASHBOARD_SESSION_TTL_MINUTES * 60,
+        path="/",
+    )
+    return SessionResponse(username=request.username, expires_at=expires_at)
+
+
+@router.post("/auth/logout", tags=["Auth"])
+async def logout(response: Response):
+    """Clear the dashboard session cookie."""
+    response.delete_cookie(settings.SESSION_COOKIE_NAME, path="/")
+    return {"status": "logged_out"}
+
+
+@router.get("/auth/me", response_model=SessionResponse, tags=["Auth"])
+async def session_me(request: Request):
+    """Validate the current dashboard session."""
+    token = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    payload = verify_session_token(token) if token else None
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    expires_at = datetime.utcfromtimestamp(payload["exp"])
+    return SessionResponse(username=payload.get("sub", "unknown"), expires_at=expires_at)
 
 
 # ─── Health Check ────────────────────────────────────────────────────────────

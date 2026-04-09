@@ -24,7 +24,6 @@ neo4j>=5.0.0
 httpx>=0.27.0
 aiohttp>=3.9.5
 dnspython>=2.6.1
-requests>=2.32.3
 
 # Security & Crypto
 cryptography>=42.0.0

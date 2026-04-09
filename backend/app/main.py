@@ -125,9 +125,8 @@ app.add_middleware(
 # Request logging
 app.add_middleware(RequestLoggingMiddleware)
 
-# API Key auth
-if not settings.DEBUG:
-    app.add_middleware(APIKeyMiddleware)
+# API Key or session auth
+app.add_middleware(APIKeyMiddleware)
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 

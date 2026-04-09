@@ -55,7 +55,7 @@ URL_SHORTENERS = {
 }
 
 
-def run_enrichment_agent(state: EmailAnalysisState) -> EmailAnalysisState:
+async def run_enrichment_agent(state: EmailAnalysisState) -> EmailAnalysisState:
     """Enrichment Agent node for LangGraph."""
     start_time = time.time()
     log = logger.bind(analysis_id=state["analysis_id"])
@@ -76,26 +76,29 @@ def run_enrichment_agent(state: EmailAnalysisState) -> EmailAnalysisState:
     urls = parsed.get("urls", [])
     log.info(f"Analyzing {len(urls)} URLs")
 
-    for url in urls[:20]:  # Limit to first 20 URLs
-        url_result = _analyze_url(url)
-        url_analyses.append(url_result)
-        if url_result.get("threat_score", 0) > 0.3:
-            score_components.append(url_result["threat_score"])
-            findings.extend(url_result.get("findings", []))
-            categories.extend(url_result.get("categories", []))
-            indicators[f"url_{url[:50]}"] = url_result
-
     # ─── Attachment Analysis ──────────────────────────────────────────────────
     attachments = parsed.get("attachment_data", [])
     log.info(f"Analyzing {len(attachments)} attachments")
 
-    for attachment in attachments:
-        att_result = _analyze_attachment(attachment)
-        attachment_analyses.append(att_result)
-        if att_result.get("threat_score", 0) > 0.3:
-            score_components.append(att_result["threat_score"])
-            findings.extend(att_result.get("findings", []))
-            categories.extend(att_result.get("categories", []))
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        url_tasks = [_analyze_url(url, client) for url in urls[:20]]
+        if url_tasks:
+            url_analyses = await asyncio.gather(*url_tasks)
+        for url_result in url_analyses:
+            if url_result.get("threat_score", 0) > 0.3:
+                score_components.append(url_result["threat_score"])
+                findings.extend(url_result.get("findings", []))
+                categories.extend(url_result.get("categories", []))
+                indicators[f"url_{url_result.get('url', '')[:50]}"] = url_result
+
+        attachment_tasks = [_analyze_attachment(attachment, client) for attachment in attachments]
+        if attachment_tasks:
+            attachment_analyses = await asyncio.gather(*attachment_tasks)
+        for att_result in attachment_analyses:
+            if att_result.get("threat_score", 0) > 0.3:
+                score_components.append(att_result["threat_score"])
+                findings.extend(att_result.get("findings", []))
+                categories.extend(att_result.get("categories", []))
 
     # ─── LotL Detection ──────────────────────────────────────────────────────
     lotl_result = _detect_lotl(urls, parsed.get("body_text", "") or "")
@@ -142,7 +145,7 @@ def run_enrichment_agent(state: EmailAnalysisState) -> EmailAnalysisState:
     }
 
 
-def _analyze_url(url: str) -> Dict[str, Any]:
+async def _analyze_url(url: str, client: httpx.AsyncClient) -> Dict[str, Any]:
     """Comprehensive URL threat analysis."""
     result = {
         "url": url,
@@ -188,7 +191,7 @@ def _analyze_url(url: str) -> Dict[str, Any]:
 
         # 5. VirusTotal check (if API key available)
         if settings.VIRUSTOTAL_API_KEY:
-            vt_result = _check_virustotal_url(url)
+            vt_result = await _check_virustotal_url(url, client)
             if vt_result:
                 result["virustotal_score"] = vt_result.get("score", 0)
                 if vt_result.get("malicious", False):
@@ -200,7 +203,7 @@ def _analyze_url(url: str) -> Dict[str, Any]:
 
         # 6. PhishTank check (if API key available)
         if settings.PHISHTANK_API_KEY:
-            pt_result = _check_phishtank(url)
+            pt_result = await _check_phishtank(url, client)
             if pt_result:
                 result["phishtank_detected"] = True
                 result["threat_score"] = max(result["threat_score"], 0.95)
@@ -321,7 +324,7 @@ def _check_url_features(url: str, domain: str) -> Tuple[float, List[str]]:
     return score, findings
 
 
-def _analyze_attachment(attachment: Dict[str, Any]) -> Dict[str, Any]:
+async def _analyze_attachment(attachment: Dict[str, Any], client: httpx.AsyncClient) -> Dict[str, Any]:
     """Analyze email attachment for threats."""
     result = {
         "filename": attachment.get("filename", "unknown"),
@@ -370,7 +373,7 @@ def _analyze_attachment(attachment: Dict[str, Any]) -> Dict[str, Any]:
 
     # 3. VirusTotal hash check
     if settings.VIRUSTOTAL_API_KEY and result.get("sha256_hash"):
-        vt_result = _check_virustotal_hash(result["sha256_hash"])
+        vt_result = await _check_virustotal_hash(result["sha256_hash"], client)
         if vt_result:
             result["virustotal_score"] = vt_result.get("score", 0)
             if vt_result.get("malicious", False):
@@ -423,16 +426,15 @@ def _extract_qr_codes(content: bytes, filename: str) -> Dict[str, Any]:
         return {"qr_codes_found": False, "urls": [], "count": 0}
 
 
-def _check_virustotal_url(url: str) -> Optional[Dict[str, Any]]:
+async def _check_virustotal_url(url: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
     """Check URL against VirusTotal API."""
     try:
         import base64 as b64
         url_id = b64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
         headers = {"x-apikey": settings.VIRUSTOTAL_API_KEY}
-        response = httpx.get(
+        response = await client.get(
             f"{settings.VIRUSTOTAL_BASE_URL}/urls/{url_id}",
             headers=headers,
-            timeout=5.0
         )
         if response.status_code == 200:
             data = response.json()
@@ -450,14 +452,13 @@ def _check_virustotal_url(url: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _check_virustotal_hash(sha256: str) -> Optional[Dict[str, Any]]:
+async def _check_virustotal_hash(sha256: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
     """Check file hash against VirusTotal API."""
     try:
         headers = {"x-apikey": settings.VIRUSTOTAL_API_KEY}
-        response = httpx.get(
+        response = await client.get(
             f"{settings.VIRUSTOTAL_BASE_URL}/files/{sha256}",
             headers=headers,
-            timeout=5.0
         )
         if response.status_code == 200:
             data = response.json()
@@ -475,16 +476,15 @@ def _check_virustotal_hash(sha256: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _check_phishtank(url: str) -> Optional[bool]:
+async def _check_phishtank(url: str, client: httpx.AsyncClient) -> Optional[bool]:
     """Check URL against PhishTank database."""
     try:
         data = {"url": url, "format": "json"}
         if settings.PHISHTANK_API_KEY:
             data["app_key"] = settings.PHISHTANK_API_KEY
-        response = httpx.post(
+        response = await client.post(
             settings.PHISHTANK_BASE_URL,
             data=data,
-            timeout=5.0
         )
         if response.status_code == 200:
             result = response.json()

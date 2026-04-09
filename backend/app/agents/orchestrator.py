@@ -5,7 +5,6 @@ Manages state, agent routing, parallel execution, and retries.
 import time
 import uuid
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional
 import structlog
 
@@ -22,11 +21,9 @@ from app.agents.decision_agent import run_decision_agent
 
 logger = structlog.get_logger(__name__)
 
-# Thread pool for parallel agent execution
-_executor = ThreadPoolExecutor(max_workers=4)
 
 
-def _run_parallel_agents(state: EmailAnalysisState) -> EmailAnalysisState:
+async def _run_parallel_agents(state: EmailAnalysisState) -> EmailAnalysisState:
     """
     Run Text, Metadata, and Enrichment agents in parallel using threads.
     Each agent independently analyzes the email and appends to agent_findings.
@@ -34,22 +31,11 @@ def _run_parallel_agents(state: EmailAnalysisState) -> EmailAnalysisState:
     log = logger.bind(analysis_id=state["analysis_id"])
     log.info("Starting parallel agent execution")
 
-    # Run agents in parallel using thread pool
-    futures = []
-    agent_fns = [
-        run_text_analysis_agent,
-        run_metadata_agent,
-        run_enrichment_agent,
-    ]
-
-    loop = asyncio.new_event_loop()
-
-    def run_agent(fn, state):
-        return fn(state)
-
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [executor.submit(run_agent, fn, state) for fn in agent_fns]
-        results = [f.result() for f in futures]
+    results = await asyncio.gather(
+        asyncio.to_thread(run_text_analysis_agent, state),
+        asyncio.to_thread(run_metadata_agent, state),
+        run_enrichment_agent(state),
+    )
 
     # Merge all agent findings and intermediate results
     merged_state = {**state}
@@ -176,11 +162,9 @@ async def analyze_email(
     # Run the graph
     graph = get_analysis_graph()
 
-    # Execute in thread pool to avoid blocking async event loop
-    loop = asyncio.get_event_loop()
-    final_state = await loop.run_in_executor(
-        _executor,
-        lambda: graph.invoke(initial_state, config=RunnableConfig(recursion_limit=10))
+    final_state = await graph.ainvoke(
+        initial_state,
+        config=RunnableConfig(recursion_limit=10)
     )
 
     log.info(

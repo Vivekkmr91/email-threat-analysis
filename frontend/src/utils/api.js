@@ -1,14 +1,13 @@
 import axios from 'axios';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api/v1';
-const API_KEY = process.env.REACT_APP_API_KEY || 'demo-api-key-change-in-production';
 
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
-    'X-API-Key': API_KEY,
   },
+  withCredentials: true,
   timeout: 60000,
 });
 
@@ -33,6 +32,12 @@ export const emailAPI = {
   submitFeedback: (id, feedback) => api.post(`/analyses/${id}/feedback`, feedback),
   getDashboardStats: (days = 30) => api.get('/dashboard/stats', { params: { days } }),
   getHealth: () => api.get('/health'),
+};
+
+export const authAPI = {
+  login: (payload) => api.post('/auth/login', payload),
+  logout: () => api.post('/auth/logout'),
+  me: () => api.get('/auth/me'),
 };
 
 export default api;
