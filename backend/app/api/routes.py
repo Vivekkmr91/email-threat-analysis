@@ -8,23 +8,29 @@ from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status, Response, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_
 import structlog
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal, neo4j_session
 from app.models.email import EmailAnalysis, URLAnalysis, AttachmentAnalysis, ThreatVerdict
 from app.models.schemas import (
     EmailSubmitRequest, EmailAnalysisResponse, AnalysisListResponse,
     AnalysisListItem, FeedbackRequest, DashboardStats, AgentFinding,
     URLResult, AttachmentResult, ThreatVerdictEnum, ThreatCategoryEnum,
-    HealthResponse, LoginRequest, SessionResponse,
+    HealthResponse, LoginRequest, SessionResponse, GmailWebhookRequest,
+    GraphSnapshotResponse, GraphNode, GraphEdge,
 )
 from app.agents.orchestrator import analyze_email
 from app.core.config import settings
 from app.core.database import get_neo4j_driver
 from app.api.middleware import create_session_token, verify_session_token
+from app.integrations.gmail_service import (
+    parse_pubsub_notification,
+    fetch_raw_message,
+    GmailIntegrationError,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -70,6 +76,69 @@ async def session_me(request: Request):
 
     expires_at = datetime.utcfromtimestamp(payload["exp"])
     return SessionResponse(username=payload.get("sub", "unknown"), expires_at=expires_at)
+
+
+# ─── Integrations ───────────────────────────────────────────────────────────
+
+@router.post("/integrations/gmail/webhook", status_code=status.HTTP_202_ACCEPTED, tags=["Integrations"])
+async def gmail_webhook(payload: GmailWebhookRequest, request: Request):
+    """Receive Gmail Pub/Sub notifications and queue analysis."""
+    if settings.GMAIL_WEBHOOK_TOKEN:
+        token = request.headers.get("X-Goog-Channel-Token")
+        if token != settings.GMAIL_WEBHOOK_TOKEN:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Gmail webhook token")
+
+    try:
+        message_ids = await parse_pubsub_notification(payload.model_dump())
+    except GmailIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    asyncio.create_task(_process_gmail_messages(message_ids))
+    return {"status": "queued", "message_count": len(message_ids)}
+
+
+@router.api_route(
+    "/integrations/microsoft/webhook",
+    methods=["GET", "POST"],
+    tags=["Integrations"],
+)
+async def microsoft_webhook(request: Request, validationToken: Optional[str] = None):
+    """Microsoft 365 webhook endpoint (future integration)."""
+    if validationToken:
+        return PlainTextResponse(validationToken)
+
+    if settings.MICROSOFT_WEBHOOK_TOKEN:
+        token = request.headers.get("X-Microsoft-Webhook-Token")
+        if token != settings.MICROSOFT_WEBHOOK_TOKEN:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Microsoft webhook token")
+
+    payload = await request.json() if request.headers.get("content-type") else {}
+    logger.info("Microsoft webhook received", payload=payload)
+    return {"status": "received"}
+
+
+async def _process_gmail_messages(message_ids: List[str]) -> None:
+    if not message_ids:
+        return
+
+    async with AsyncSessionLocal() as db:
+        for message_id in message_ids:
+            try:
+                raw_email = await fetch_raw_message(message_id)
+                analysis_id = str(uuid.uuid4())
+                result = await analyze_email(
+                    raw_email=raw_email,
+                    source="gmail",
+                    analysis_id=analysis_id,
+                )
+                request_payload = EmailSubmitRequest(
+                    raw_email=raw_email,
+                    source="gmail",
+                    external_email_id=message_id,
+                )
+                await _save_analysis_to_db(db, analysis_id, request_payload, result)
+            except Exception as exc:
+                logger.error("Gmail analysis failed", message_id=message_id, error=str(exc))
 
 
 # ─── Health Check ────────────────────────────────────────────────────────────
@@ -137,6 +206,59 @@ async def health_check():
         services=services,
         timestamp=datetime.now(timezone.utc),
     )
+
+
+# ─── Graph Snapshot ─────────────────────────────────────────────────────────
+
+@router.get("/graph/snapshot", response_model=GraphSnapshotResponse, tags=["Graph"])
+async def graph_snapshot(
+    node_limit: int = Query(200, ge=1, le=500),
+    edge_limit: int = Query(400, ge=1, le=1000),
+):
+    """Fetch a Neo4j graph snapshot for real-time visualization."""
+    nodes: List[GraphNode] = []
+    edges: List[GraphEdge] = []
+
+    try:
+        async with neo4j_session() as session:
+            node_query = """
+            MATCH (n)
+            RETURN id(n) as node_id,
+                   labels(n) as labels,
+                   coalesce(n.name, n.address, n.url, n.id, "unknown") as label,
+                   coalesce(n.threat_score, 0.0) as threat_score
+            LIMIT $limit
+            """
+            node_result = await session.run(node_query, limit=node_limit)
+            async for record in node_result:
+                labels = record.get("labels") or []
+                nodes.append(
+                    GraphNode(
+                        node_id=str(record.get("node_id")),
+                        label=str(record.get("label")),
+                        node_type=str(labels[0] if labels else "entity"),
+                        threat_score=float(record.get("threat_score") or 0.0),
+                    )
+                )
+
+            edge_query = """
+            MATCH (a)-[r]->(b)
+            RETURN id(a) as source, id(b) as target, type(r) as relationship
+            LIMIT $limit
+            """
+            edge_result = await session.run(edge_query, limit=edge_limit)
+            async for record in edge_result:
+                edges.append(
+                    GraphEdge(
+                        source=str(record.get("source")),
+                        target=str(record.get("target")),
+                        relationship=str(record.get("relationship")),
+                    )
+                )
+    except Exception as exc:
+        logger.warning("Graph snapshot unavailable", error=str(exc))
+
+    return GraphSnapshotResponse(nodes=nodes, edges=edges, generated_at=datetime.utcnow())
 
 
 # ─── Email Analysis ──────────────────────────────────────────────────────────
@@ -560,6 +682,8 @@ async def _save_analysis_to_db(
                     virustotal_score=att_data.get("virustotal_score"),
                     contains_qr_code=att_data.get("contains_qr_code", False),
                     qr_code_urls=att_data.get("qr_code_urls", []),
+                    sandbox_detonated=att_data.get("sandbox_detonated", False),
+                    sandbox_verdict=att_data.get("sandbox_verdict"),
                     threat_details=att_data.get("indicators", {}),
                 )
                 db.add(att_record)

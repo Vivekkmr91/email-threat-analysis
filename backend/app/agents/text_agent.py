@@ -86,6 +86,9 @@ def run_text_analysis_agent(state: EmailAnalysisState) -> EmailAnalysisState:
     urls    = parsed.get("urls") or []
     full_text = f"Subject: {subject}\n\n{body}"
 
+    language_result = _detect_language(full_text) if settings.MULTILINGUAL_DETECTION_ENABLED else {}
+    language_hint = language_result.get("language") if language_result else None
+
     # ── Layer 1: Heuristic analysis ──────────────────────────────────────────
     heuristic_result = _run_heuristics(full_text, subject, parsed)
 
@@ -93,7 +96,7 @@ def run_text_analysis_agent(state: EmailAnalysisState) -> EmailAnalysisState:
     llm_result: Dict[str, Any] = {}
     if settings.llm_provider != "none" and len(full_text.strip()) > 20:
         try:
-            llm_result = _run_llm_analysis(full_text, subject, parsed)
+            llm_result = _run_llm_analysis(full_text, subject, parsed, language_hint)
         except Exception as e:
             log.warning("LLM text analysis failed, using heuristics + ML", error=str(e))
 
@@ -112,6 +115,10 @@ def run_text_analysis_agent(state: EmailAnalysisState) -> EmailAnalysisState:
         + llm_result.get("findings", [])
         + ml_result.get("findings", [])
     )
+    if language_result and language_hint and language_hint != "en":
+        all_findings.append(
+            f"Multilingual detection: email appears to be '{language_hint}' (confidence {language_result.get('confidence', 0):.0%})"
+        )
     all_categories = list(set(
         heuristic_result.get("threat_categories", [])
         + llm_result.get("threat_categories", [])
@@ -122,6 +129,8 @@ def run_text_analysis_agent(state: EmailAnalysisState) -> EmailAnalysisState:
         **llm_result.get("indicators", {}),
         **ml_result.get("indicators", {}),
     }
+    if language_result:
+        all_indicators["language"] = language_result
 
     processing_time = int((time.time() - start_time) * 1000)
 
@@ -263,15 +272,43 @@ def _check_llm_generated(text: str) -> bool:
     return variance < 8 and not has_typos and avg > 8
 
 
+def _detect_language(text: str) -> Dict[str, Any]:
+    """Detect language for multilingual phishing detection."""
+    if not text.strip():
+        return {}
+
+    try:
+        from langdetect import detect_langs
+
+        candidates = detect_langs(text)
+        if not candidates:
+            return {}
+        top = candidates[0]
+        return {
+            "language": top.lang,
+            "confidence": round(top.prob, 3),
+            "is_english": top.lang == "en",
+        }
+    except Exception as exc:
+        logger.debug("Language detection failed", error=str(exc))
+        return {}
+
+
 # ─── Layer 2: LLM (GPT) ──────────────────────────────────────────────────────
 
-def _run_llm_analysis(text: str, subject: str, parsed: Dict) -> Dict[str, Any]:
+def _run_llm_analysis(text: str, subject: str, parsed: Dict, language_hint: Optional[str] = None) -> Dict[str, Any]:
     """Use the configured LLM (OpenRouter or OpenAI) to analyse email threats."""
     llm = get_llm(max_tokens=800)
     if llm is None:
         return {}
 
-    system_prompt = """You are a cybersecurity expert specializing in email threat analysis.
+    language_note = ""
+    if language_hint and language_hint != "en":
+        language_note = (
+            f"The email may be written in {language_hint}. Analyze it in that language and translate findings to English."
+        )
+
+    system_prompt = f"""You are a cybersecurity expert specializing in email threat analysis.
 Analyze the provided email for:
 1. Social engineering tactics (urgency, authority, fear, scarcity)
 2. Business Email Compromise (BEC) indicators
@@ -279,16 +316,18 @@ Analyze the provided email for:
 4. LLM-generated phishing characteristics (overly formal, grammatically perfect, no personal details)
 5. Executive impersonation patterns
 
+{language_note}
+
 Respond in JSON with this structure:
-{
-  "threat_score": 0.0-1.0,
-  "confidence": 0.0-1.0,
-  "is_llm_generated": true/false,
-  "social_engineering_tactics": ["list of tactics found"],
-  "threat_categories": ["phishing", "business_email_compromise", etc.],
-  "findings": ["specific finding 1", "finding 2"],
-  "explanation": "brief explanation"
-}
+{{
+  \"threat_score\": 0.0-1.0,
+  \"confidence\": 0.0-1.0,
+  \"is_llm_generated\": true/false,
+  \"social_engineering_tactics\": [\"list of tactics found\"],
+  \"threat_categories\": [\"phishing\", \"business_email_compromise\", etc.],
+  \"findings\": [\"specific finding 1\", \"finding 2\"],
+  \"explanation\": \"brief explanation\"
+}}
 
 Be conservative - only flag clear threats. Return threat_score=0.0 for legitimate emails."""
 

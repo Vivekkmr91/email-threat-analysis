@@ -8,6 +8,7 @@ Enrichment Agent - Technical inspection of URLs and attachments:
 - Attachment hash analysis
 - Deepfake link detection
 """
+import base64
 import time
 import re
 import io
@@ -21,6 +22,7 @@ import structlog
 from app.agents.state import EmailAnalysisState, AgentFindingState
 from app.agents.email_parser import detect_lookalike_domain
 from app.core.config import settings
+from app.integrations.threat_intel import query_threat_feeds
 
 logger = structlog.get_logger(__name__)
 
@@ -99,6 +101,24 @@ async def run_enrichment_agent(state: EmailAnalysisState) -> EmailAnalysisState:
                 score_components.append(att_result["threat_score"])
                 findings.extend(att_result.get("findings", []))
                 categories.extend(att_result.get("categories", []))
+
+        threat_feed_results = await query_threat_feeds(
+            client,
+            urls=urls,
+            domains=[item.get("domain") for item in url_analyses if item.get("domain")],
+            hashes=[item.get("sha256_hash") for item in attachment_analyses if item.get("sha256_hash")],
+        )
+        if threat_feed_results:
+            indicators["threat_feeds"] = threat_feed_results
+            findings.append(f"Threat intelligence feeds matched {len(threat_feed_results)} indicator(s)")
+            max_confidence = max(
+                [float(item.get("confidence", 0.6) or 0.6) for item in threat_feed_results]
+            )
+            score_components.append(max(0.6, max_confidence))
+            if any(item.get("type") in {"hash", "file"} or item.get("threat") == "malware" for item in threat_feed_results):
+                categories.append("malware")
+            else:
+                categories.append("phishing")
 
     # ─── LotL Detection ──────────────────────────────────────────────────────
     lotl_result = _detect_lotl(urls, parsed.get("body_text", "") or "")
@@ -398,6 +418,20 @@ async def _analyze_attachment(attachment: Dict[str, Any], client: httpx.AsyncCli
                 )
                 result["categories"].append("quishing")
 
+    # 5. Sandbox detonation (optional)
+    if content and result["threat_score"] >= settings.SANDBOX_DETONATION_THRESHOLD:
+        if settings.SANDBOX_BASE_URL:
+            sandbox_result = await _detonate_attachment(filename, content, client)
+            result["sandbox_detonated"] = sandbox_result.get("detonated", False)
+            result["sandbox_verdict"] = sandbox_result.get("verdict")
+            result.setdefault("indicators", {})["sandbox"] = sandbox_result
+            if sandbox_result.get("malicious"):
+                result["threat_score"] = max(result["threat_score"], 0.95)
+                result["findings"].append("Sandbox detonation flagged the attachment as malicious")
+                result["categories"].append("malware")
+        else:
+            result["sandbox_verdict"] = "not_configured"
+
     return result
 
 
@@ -424,6 +458,48 @@ def _extract_qr_codes(content: bytes, filename: str) -> Dict[str, Any]:
     except Exception as e:
         logger.debug("QR code extraction failed", error=str(e))
         return {"qr_codes_found": False, "urls": [], "count": 0}
+
+
+async def _detonate_attachment(
+    filename: str,
+    content: bytes,
+    client: httpx.AsyncClient,
+) -> Dict[str, Any]:
+    """Send attachment to sandbox detonation API."""
+    try:
+        url = f"{settings.SANDBOX_BASE_URL.rstrip('/')}/detonate"
+        headers = {}
+        if settings.SANDBOX_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.SANDBOX_API_KEY}"
+
+        payload = {
+            "filename": filename,
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "content_base64": base64.b64encode(content).decode("utf-8"),
+        }
+
+        response = await client.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=settings.SANDBOX_TIMEOUT_SECONDS,
+        )
+        if response.status_code != 200:
+            return {"detonated": False, "verdict": "error", "detail": response.text}
+
+        data = response.json() if response.content else {}
+        verdict = data.get("verdict", "unknown")
+        malicious = bool(data.get("malicious")) or verdict in {"malicious", "suspicious"}
+
+        return {
+            "detonated": True,
+            "verdict": verdict,
+            "malicious": malicious,
+            "report_url": data.get("report_url"),
+        }
+    except Exception as exc:
+        logger.warning("Sandbox detonation failed", error=str(exc))
+        return {"detonated": False, "verdict": "error", "detail": str(exc)}
 
 
 async def _check_virustotal_url(url: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
