@@ -30,6 +30,34 @@ class Settings(BaseSettings):
     DASHBOARD_SESSION_TTL_MINUTES: int = Field(default=480)
     SESSION_COOKIE_NAME: str = Field(default="eta_session")
 
+    # Integrations - Gmail
+    GMAIL_ACCESS_TOKEN: Optional[str] = Field(default=None)
+    GMAIL_REFRESH_TOKEN: Optional[str] = Field(default=None)
+    GMAIL_TOKEN_URI: str = Field(default="https://oauth2.googleapis.com/token")
+    GMAIL_USER_ID: str = Field(default="me")
+    GMAIL_WEBHOOK_TOKEN: Optional[str] = Field(default=None)
+
+    # Integrations - Microsoft 365 (future)
+    MICROSOFT_WEBHOOK_TOKEN: Optional[str] = Field(default=None)
+
+    # Threat intelligence feeds
+    THREAT_FEED_URLS: list[str] = Field(default_factory=list)
+    THREAT_FEED_API_KEY: Optional[str] = Field(default=None)
+    URLHAUS_API_URL: str = Field(default="https://urlhaus-api.abuse.ch/v1/url/")
+    OPENPHISH_FEED_URL: Optional[str] = Field(default=None)
+    OPENPHISH_FEED_TTL_SECONDS: int = Field(default=1800)
+    ABUSEIPDB_API_KEY: Optional[str] = Field(default=None)
+    ABUSEIPDB_BASE_URL: str = Field(default="https://api.abuseipdb.com/api/v2/check")
+
+    # Sandbox detonation
+    SANDBOX_BASE_URL: Optional[str] = Field(default=None)
+    SANDBOX_API_KEY: Optional[str] = Field(default=None)
+    SANDBOX_TIMEOUT_SECONDS: int = Field(default=20)
+    SANDBOX_DETONATION_THRESHOLD: float = Field(default=0.6)
+
+    # Multilingual detection
+    MULTILINGUAL_DETECTION_ENABLED: bool = Field(default=True)
+
     # ── CORS ─────────────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: list[str] = Field(
         default=["http://localhost:3000", "http://localhost:8080", "http://frontend:80"]

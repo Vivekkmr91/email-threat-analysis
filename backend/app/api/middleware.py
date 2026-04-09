@@ -33,6 +33,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         "/redoc",
         "/openapi.json",
         "/api/v1/auth/login",
+        "/api/v1/integrations/gmail/webhook",
+        "/api/v1/integrations/microsoft/webhook",
     }
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

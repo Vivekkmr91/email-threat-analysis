@@ -91,6 +91,31 @@ class SessionResponse(BaseModel):
     expires_at: datetime
 
 
+class GmailWebhookRequest(BaseModel):
+    """Gmail Pub/Sub webhook payload."""
+    message: Dict[str, Any]
+    subscription: Optional[str] = None
+
+
+class GraphNode(BaseModel):
+    node_id: str
+    label: str
+    node_type: str
+    threat_score: float = 0.0
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    relationship: str
+
+
+class GraphSnapshotResponse(BaseModel):
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]
+    generated_at: datetime
+
+
 # ─── Response Schemas ────────────────────────────────────────────────────────
 
 class AgentFinding(BaseModel):

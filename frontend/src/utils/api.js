@@ -32,6 +32,7 @@ export const emailAPI = {
   submitFeedback: (id, feedback) => api.post(`/analyses/${id}/feedback`, feedback),
   getDashboardStats: (days = 30) => api.get('/dashboard/stats', { params: { days } }),
   getHealth: () => api.get('/health'),
+  getGraphSnapshot: (params) => api.get('/graph/snapshot', { params }),
 };
 
 export const authAPI = {
