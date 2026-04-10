@@ -54,6 +54,10 @@
 | **Spoofing/Impersonation** | SPF/DKIM/DMARC, display name analysis | Metadata |
 | **Campaign Correlation** | Graph relationship mapping | Graph (Neo4j) |
 
+## 🗂️ Data Model
+
+See [docs/data-model.md](docs/data-model.md) for the PostgreSQL and Neo4j schema details that back the dashboard KPIs and Threat Graph.
+
 ## 🚀 Quick Start
 
 **Two deployment options:**
