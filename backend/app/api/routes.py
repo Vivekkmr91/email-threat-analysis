@@ -443,7 +443,15 @@ async def submit_feedback(
     - false_positive: Email was flagged but is legitimate
     - false_negative: Email was clean but is malicious
     """
-    record = await db.get(EmailAnalysis, analysis_id)
+    try:
+        analysis_uuid = uuid.UUID(analysis_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid analysis_id format",
+        )
+
+    record = await db.get(EmailAnalysis, analysis_uuid)
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
