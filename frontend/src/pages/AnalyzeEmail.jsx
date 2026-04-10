@@ -172,6 +172,11 @@ export default function AnalyzeEmail() {
               <Field label="Recipients" value={form.recipients} onChange={v => setForm({...form, recipients: v})} placeholder="recipient@domain.com (comma-separated)" />
               <TextArea label="Body (Plain Text)" value={form.body_text} onChange={v => setForm({...form, body_text: v})} rows={8} placeholder="Email body text..." />
               <TextArea label="Headers (JSON)" value={form.headers_raw} onChange={v => setForm({...form, headers_raw: v})} rows={4} placeholder='{"Reply-To": "...", "Authentication-Results": "spf=fail"}' mono />
+              <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+                Headers JSON is optional. Provide a key-value map of raw email headers (e.g.,
+                {' '}<code style={{ color: '#93c5fd' }}>{'{"Reply-To": "attacker@evil.com", "Authentication-Results": "spf=fail"}'}</code>).
+                This helps the Metadata agent detect SPF/DKIM/DMARC issues and header anomalies.
+              </div>
             </div>
           ) : (
             <TextArea label="Raw Email (RFC 2822 / EML format)" value={rawEmail} onChange={setRawEmail} rows={16} placeholder="Paste raw email here..." mono />

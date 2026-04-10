@@ -39,6 +39,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Neo4j initialization warning (non-fatal)", error=str(e))
 
+    if settings.SEED_DEMO_DATA:
+        try:
+            from app.core.demo_seed import seed_postgres_demo
+            inserted = await seed_postgres_demo(
+                settings.SEED_DEMO_TRUNCATE,
+                settings.SEED_DEMO_REPEAT,
+                settings.SEED_DEMO_HOURS_STEP,
+            )
+            logger.info("Seeded demo PostgreSQL data", rows=inserted)
+        except Exception as e:
+            logger.warning("Demo PostgreSQL seeding failed", error=str(e))
+
+        try:
+            from app.core.demo_seed import seed_neo4j_demo
+            nodes = await seed_neo4j_demo(settings.SEED_DEMO_TRUNCATE)
+            logger.info("Seeded demo Neo4j data", nodes=nodes)
+        except Exception as e:
+            logger.warning("Demo Neo4j seeding failed", error=str(e))
+
     # Warm up ML model registry (loads checkpoints if they exist)
     try:
         from app.ml.phishing_classifier import get_registry

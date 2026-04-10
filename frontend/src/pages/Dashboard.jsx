@@ -23,19 +23,61 @@ const StatCard = ({ label, value, color = '#3b82f6', icon }) => (
   </div>
 );
 
+const DEMO_STATS = {
+  total_analyzed: 1287,
+  malicious_count: 142,
+  suspicious_count: 214,
+  spam_count: 308,
+  clean_count: 623,
+  detection_rate: 0.91,
+  false_positive_rate: 0.012,
+  avg_analysis_time_ms: 1380,
+  top_threat_categories: [
+    { category: 'phishing', count: 210 },
+    { category: 'business_email_compromise', count: 132 },
+    { category: 'malware', count: 84 },
+  ],
+  threats_over_time: [
+    { date: '2026-04-01', malicious: 8, suspicious: 12, clean: 38 },
+    { date: '2026-04-02', malicious: 11, suspicious: 15, clean: 42 },
+    { date: '2026-04-03', malicious: 9, suspicious: 10, clean: 36 },
+    { date: '2026-04-04', malicious: 13, suspicious: 18, clean: 45 },
+    { date: '2026-04-05', malicious: 7, suspicious: 14, clean: 33 },
+    { date: '2026-04-06', malicious: 12, suspicious: 16, clean: 41 },
+    { date: '2026-04-07', malicious: 15, suspicious: 20, clean: 46 },
+    { date: '2026-04-08', malicious: 10, suspicious: 17, clean: 39 },
+    { date: '2026-04-09', malicious: 14, suspicious: 19, clean: 44 },
+    { date: '2026-04-10', malicious: 16, suspicious: 22, clean: 48 },
+  ],
+  top_sender_domains: [
+    { domain: 'paypa1-secure.com', count: 48 },
+    { domain: 'secure-office365.com', count: 41 },
+    { domain: 'invoice-update.net', count: 37 },
+    { domain: 'hr-portal-alerts.io', count: 31 },
+    { domain: 'cloudshare-files.com', count: 26 },
+  ],
+};
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
+  const [useDemo, setUseDemo] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (useDemo) {
+      return undefined;
+    }
     const load = async () => {
       setLoading(true);
+      setError(null);
       try {
         const data = await emailAPI.getDashboardStats(days);
         setStats(data);
       } catch (e) {
         console.error('Failed to load stats', e);
+        setError('Unable to load live dashboard stats.');
       } finally {
         setLoading(false);
       }
@@ -43,11 +85,25 @@ export default function Dashboard() {
     load();
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
-  }, [days]);
+  }, [days, useDemo]);
 
   if (loading && !stats) {
     return <div style={{ padding: 32, color: '#64748b', textAlign: 'center' }}>Loading dashboard...</div>;
   }
+
+  const hasData = stats && stats.total_analyzed > 0;
+
+  const enableDemo = () => {
+    setStats(DEMO_STATS);
+    setUseDemo(true);
+    setError(null);
+    setLoading(false);
+  };
+
+  const enableLive = () => {
+    setUseDemo(false);
+    setLoading(true);
+  };
 
   const verdictData = {
     labels: ['Malicious', 'Suspicious', 'Spam', 'Clean'],
@@ -113,19 +169,77 @@ export default function Dashboard() {
             Real-time email threat intelligence overview
           </p>
         </div>
-        <select
-          value={days}
-          onChange={e => setDays(Number(e.target.value))}
-          style={{
-            background: '#1e293b', border: '1px solid #334155', color: '#94a3b8',
-            padding: '6px 12px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-          }}
-        >
-          <option value={7}>Last 7 days</option>
-          <option value={30}>Last 30 days</option>
-          <option value={90}>Last 90 days</option>
-        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            onClick={useDemo ? enableLive : enableDemo}
+            style={{
+              background: '#1e293b',
+              border: '1px solid #334155',
+              color: '#94a3b8',
+              padding: '6px 12px',
+              borderRadius: 8,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            {useDemo ? 'Use Live Data' : 'Show Demo Data'}
+          </button>
+          <select
+            value={days}
+            onChange={e => setDays(Number(e.target.value))}
+            style={{
+              background: '#1e293b', border: '1px solid #334155', color: '#94a3b8',
+              padding: '6px 12px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={90}>Last 90 days</option>
+          </select>
+        </div>
       </div>
+
+      {(error || !hasData) && (
+        <div style={{
+          marginBottom: 16,
+          background: '#1e293b',
+          border: '1px solid #334155',
+          borderRadius: 12,
+          padding: 16,
+          color: '#94a3b8',
+          fontSize: 13,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+        }}>
+          <div>
+            <div style={{ fontWeight: 600, color: '#f1f5f9' }}>No live analytics yet</div>
+            <div style={{ marginTop: 4 }}>
+              {error || 'Run a few analyses to populate the dashboard, or load demo data to preview KPIs.'}
+            </div>
+          </div>
+          {!useDemo && (
+            <button
+              type="button"
+              onClick={enableDemo}
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                border: 'none',
+                color: '#fff',
+                padding: '8px 14px',
+                borderRadius: 8,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              Load Demo KPIs
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
