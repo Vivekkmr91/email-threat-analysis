@@ -182,6 +182,32 @@ export default function Dashboard() {
     },
   };
 
+  const domainOptions = {
+    ...chartOptions,
+    maintainAspectRatio: false,
+    scales: {
+      x: {
+        ticks: {
+          color: '#64748b',
+          font: { size: 11 },
+          autoSkip: true,
+          maxTicksLimit: 6,
+          maxRotation: 0,
+          minRotation: 0,
+          callback: (value, index) => {
+            const label = (stats?.top_sender_domains || [])[index]?.domain;
+            return label && label.length > 16 ? `${label.slice(0, 14)}…` : label;
+          },
+        },
+        grid: { color: '#1e293b' },
+      },
+      y: {
+        ticks: { color: '#64748b', font: { size: 11 } },
+        grid: { color: '#1e293b' },
+      },
+    },
+  };
+
   return (
     <div style={{ padding: 24 }}>
       {/* Header */}
@@ -314,7 +340,9 @@ export default function Dashboard() {
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: '#f1f5f9' }}>
             Top Threat Sender Domains
           </h2>
-          <Bar data={domainData} options={{ ...chartOptions, maintainAspectRatio: false }} height={160} />
+          <div style={{ height: 220, maxWidth: '100%', overflow: 'hidden' }}>
+            <Bar data={domainData} options={domainOptions} />
+          </div>
         </div>
       )}
 
