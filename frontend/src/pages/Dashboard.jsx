@@ -159,6 +159,29 @@ export default function Dashboard() {
     },
   };
 
+  const timelineOptions = {
+    ...chartOptions,
+    maintainAspectRatio: false,
+    elements: { point: { radius: 2, hitRadius: 8, hoverRadius: 4 } },
+    scales: {
+      x: {
+        ticks: {
+          color: '#64748b',
+          font: { size: 11 },
+          autoSkip: true,
+          maxTicksLimit: 8,
+          maxRotation: 0,
+          minRotation: 0,
+        },
+        grid: { color: '#1e293b' },
+      },
+      y: {
+        ticks: { color: '#64748b', font: { size: 11 } },
+        grid: { color: '#1e293b' },
+      },
+    },
+  };
+
   return (
     <div style={{ padding: 24 }}>
       {/* Header */}
@@ -259,7 +282,9 @@ export default function Dashboard() {
             Threat Timeline
           </h2>
           {(stats?.threats_over_time || []).length > 0 ? (
-            <Line data={timelineData} options={{ ...chartOptions, maintainAspectRatio: false }} height={200} />
+            <div style={{ height: 240, maxWidth: '100%', overflow: 'hidden' }}>
+              <Line data={timelineData} options={timelineOptions} />
+            </div>
           ) : (
             <div style={{ textAlign: 'center', color: '#475569', padding: 40 }}>
               No threat data for selected period
