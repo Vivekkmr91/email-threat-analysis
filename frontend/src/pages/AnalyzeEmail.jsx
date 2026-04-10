@@ -75,6 +75,7 @@ export default function AnalyzeEmail() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [feedback, setFeedback] = useState(null);
+  const [feedbackStatus, setFeedbackStatus] = useState({ loading: false, error: null });
 
   const loadSample = (sample) => {
     setForm({
@@ -123,12 +124,15 @@ export default function AnalyzeEmail() {
   };
 
   const submitFeedback = async (type) => {
-    if (!result) return;
+    if (!result || feedbackStatus.loading) return;
+    setFeedbackStatus({ loading: true, error: null });
     try {
       await emailAPI.submitFeedback(result.analysis_id, { feedback_type: type });
       setFeedback(type);
+      setFeedbackStatus({ loading: false, error: null });
     } catch (e) {
       console.error('Feedback failed', e);
+      setFeedbackStatus({ loading: false, error: e.message || 'Unable to submit feedback.' });
     }
   };
 
@@ -336,11 +340,38 @@ export default function AnalyzeEmail() {
             {feedback ? (
               <div style={{ color: '#22c55e', fontSize: 13 }}>✓ Feedback submitted: {feedback}</div>
             ) : (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => submitFeedback('correct')} style={btnStyle('#14532d', '#22c55e')}>✓ Correct</button>
-                <button onClick={() => submitFeedback('false_positive')} style={btnStyle('#1e3a5f', '#3b82f6')}>⚠ False Positive</button>
-                <button onClick={() => submitFeedback('false_negative')} style={btnStyle('#7f1d1d', '#ef4444')}>⚠ Missed Threat</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => submitFeedback('correct')}
+                  disabled={feedbackStatus.loading}
+                  style={btnStyle('#14532d', '#22c55e', feedbackStatus.loading)}
+                >
+                  ✓ Correct
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitFeedback('false_positive')}
+                  disabled={feedbackStatus.loading}
+                  style={btnStyle('#1e3a5f', '#3b82f6', feedbackStatus.loading)}
+                >
+                  ⚠ False Positive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitFeedback('false_negative')}
+                  disabled={feedbackStatus.loading}
+                  style={btnStyle('#7f1d1d', '#ef4444', feedbackStatus.loading)}
+                >
+                  ⚠ Missed Threat
+                </button>
               </div>
+            )}
+            {feedbackStatus.loading && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>Submitting feedback...</div>
+            )}
+            {feedbackStatus.error && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#fca5a5' }}>⚠ {feedbackStatus.error}</div>
             )}
           </div>
         </div>
@@ -384,7 +415,8 @@ const InfoRow = ({ label, value }) => (
   </div>
 );
 
-const btnStyle = (bg, border) => ({
+const btnStyle = (bg, border, disabled = false) => ({
   padding: '6px 14px', borderRadius: 6, border: `1px solid ${border || '#334155'}`,
-  background: bg, color: '#f1f5f9', cursor: 'pointer', fontSize: 12, fontWeight: 500,
+  background: bg, color: '#f1f5f9', cursor: disabled ? 'not-allowed' : 'pointer',
+  fontSize: 12, fontWeight: 500, opacity: disabled ? 0.7 : 1,
 });
