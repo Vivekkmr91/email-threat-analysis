@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool      = Field(default=False)
     ENVIRONMENT: str = Field(default="production")
+    SEED_DEMO_DATA: bool = Field(default=False)
+    SEED_DEMO_TRUNCATE: bool = Field(default=False)
+    SEED_DEMO_REPEAT: int = Field(default=1)
+    SEED_DEMO_HOURS_STEP: int = Field(default=6)
 
     # API Security
     SECRET_KEY: str = Field(..., min_length=32)

@@ -3,6 +3,34 @@ import { emailAPI } from '../utils/api';
 
 const GRAPH_REFRESH_MS = 30000;
 
+const DEMO_NODES = [
+  { id: '1', type: 'domain', label: 'paypa1.com', threat: 0.9 },
+  { id: '2', type: 'domain', label: 'malicious-site.xyz', threat: 0.85 },
+  { id: '3', type: 'email', label: 'attacker@evil.com', threat: 0.95 },
+  { id: '4', type: 'email', label: 'ceo@fake-corp.net', threat: 0.8 },
+  { id: '5', type: 'ip', label: '185.220.101.42', threat: 0.7 },
+  { id: '6', type: 'campaign', label: 'Campaign: PayPal2024', threat: 0.9 },
+  { id: '7', type: 'domain', label: 'micros0ft.com', threat: 0.88 },
+  { id: '8', type: 'email', label: 'support@paypa1.com', threat: 0.92 },
+  { id: '9', type: 'ip', label: '194.165.16.23', threat: 0.65 },
+  { id: '10', type: 'domain', label: 'banc-of-america.xyz', threat: 0.75 },
+];
+
+const DEMO_EDGES = [
+  { from: '3', to: '1', relationship: 'USES_DOMAIN' },
+  { from: '3', to: '6', relationship: 'LINKED_TO' },
+  { from: '1', to: '6', relationship: 'PART_OF' },
+  { from: '5', to: '3', relationship: 'SOURCE_IP' },
+  { from: '5', to: '4', relationship: 'SOURCE_IP' },
+  { from: '4', to: '2', relationship: 'LINKS_TO' },
+  { from: '8', to: '1', relationship: 'SPOOFED_DOMAIN' },
+  { from: '8', to: '7', relationship: 'LOOKALIKE' },
+  { from: '7', to: '6', relationship: 'PART_OF' },
+  { from: '9', to: '8', relationship: 'SOURCE_IP' },
+  { from: '9', to: '4', relationship: 'SOURCE_IP' },
+  { from: '10', to: '2', relationship: 'LINKS_TO' },
+];
+
 const nodeColors = {
   domain: '#ef4444',
   email: '#f59e0b',
@@ -41,8 +69,12 @@ export default function ThreatGraph() {
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [useDemo, setUseDemo] = useState(false);
 
   useEffect(() => {
+    if (useDemo) {
+      return undefined;
+    }
     let isMounted = true;
 
     const fetchSnapshot = async () => {
@@ -62,7 +94,7 @@ export default function ThreatGraph() {
         }));
         setNodes(nextNodes);
         setEdges(nextEdges);
-        setError(null);
+        setError(nextNodes.length ? null : 'No graph data yet. Run a few analyses to populate Neo4j.');
       } catch (err) {
         if (isMounted) {
           setError(err.message || 'Failed to load graph');
@@ -81,7 +113,7 @@ export default function ThreatGraph() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [useDemo]);
 
   const positionedNodes = useMemo(() => layoutNodes(nodes), [nodes]);
   const filteredNodes = positionedNodes.filter((node) => filter === 'all' || node.type === filter);
@@ -111,7 +143,38 @@ export default function ThreatGraph() {
             Neo4j-powered relationship mapping between threat entities
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (useDemo) {
+                setUseDemo(false);
+                setLoading(true);
+                setNodes([]);
+                setEdges([]);
+                setSelected(null);
+                setError(null);
+                return;
+              }
+              setUseDemo(true);
+              setNodes(DEMO_NODES);
+              setEdges(DEMO_EDGES);
+              setSelected(null);
+              setError(null);
+              setLoading(false);
+            }}
+            style={{
+              background: '#1e293b',
+              border: '1px solid #334155',
+              color: '#94a3b8',
+              padding: '6px 12px',
+              borderRadius: 8,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            {useDemo ? 'Use Live Data' : 'Show Demo Data'}
+          </button>
           {['all', 'domain', 'email', 'ip', 'campaign'].map((f) => (
             <button
               key={f}
@@ -134,6 +197,54 @@ export default function ThreatGraph() {
           ))}
         </div>
       </div>
+
+      {(error || (!loading && nodes.length === 0 && !useDemo)) && (
+        <div
+          style={{
+            marginBottom: 16,
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: 12,
+            padding: 16,
+            color: '#94a3b8',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 600, color: '#f1f5f9' }}>No graph data yet</div>
+            <div style={{ marginTop: 4 }}>{error || 'Run analyses to populate Neo4j, or load demo data.'}</div>
+          </div>
+          {!useDemo && (
+            <button
+              type="button"
+              onClick={() => {
+                setUseDemo(true);
+                setNodes(DEMO_NODES);
+                setEdges(DEMO_EDGES);
+                setSelected(null);
+                setError(null);
+                setLoading(false);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                border: 'none',
+                color: '#fff',
+                padding: '8px 14px',
+                borderRadius: 8,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              Load Demo Graph
+            </button>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16 }}>
         <div

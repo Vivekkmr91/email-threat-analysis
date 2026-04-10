@@ -144,3 +144,12 @@ class AttachmentAnalysis(Base):
     threat_details = Column(JSON, nullable=True)
 
     email_analysis = relationship("EmailAnalysis", back_populates="attachments")
+
+
+class SeedMarker(Base):
+    __tablename__ = "seed_markers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    source = Column(String(100), nullable=False, unique=True, index=True)
+    notes = Column(Text, nullable=True)
