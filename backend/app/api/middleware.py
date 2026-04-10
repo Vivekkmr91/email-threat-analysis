@@ -29,9 +29,6 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         "/",
         "/health",
         "/api/v1/health",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
         "/api/v1/auth/login",
         "/api/v1/integrations/gmail/webhook",
         "/api/v1/integrations/microsoft/webhook",
@@ -42,6 +39,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
         # Skip auth for excluded paths (exact match or health-check prefix)
         if path in self.EXCLUDED_PATHS or path.endswith("/health"):
+            return await call_next(request)
+
+        if settings.DEBUG and path in {"/docs", "/redoc", "/openapi.json"}:
             return await call_next(request)
 
         api_key = request.headers.get(settings.API_KEY_HEADER)

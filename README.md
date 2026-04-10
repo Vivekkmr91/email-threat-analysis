@@ -58,6 +58,10 @@
 
 See [docs/data-model.md](docs/data-model.md) for the PostgreSQL and Neo4j schema details that back the dashboard KPIs and Threat Graph.
 
+## 🔐 Security Review
+
+See [docs/security-review.md](docs/security-review.md) for the latest security review notes, fixes, and follow-up recommendations.
+
 ## 🚀 Quick Start
 
 **Two deployment options:**
