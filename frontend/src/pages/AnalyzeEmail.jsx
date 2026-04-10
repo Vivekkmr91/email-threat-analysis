@@ -75,7 +75,7 @@ export default function AnalyzeEmail() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [feedback, setFeedback] = useState(null);
-  const [feedbackStatus, setFeedbackStatus] = useState({ loading: false, error: null });
+  const [feedbackStatus, setFeedbackStatus] = useState({ loading: false, error: null, needsLogin: false });
 
   const loadSample = (sample) => {
     setForm({
@@ -125,14 +125,18 @@ export default function AnalyzeEmail() {
 
   const submitFeedback = async (type) => {
     if (!result || feedbackStatus.loading) return;
-    setFeedbackStatus({ loading: true, error: null });
+    setFeedbackStatus({ loading: true, error: null, needsLogin: false });
     try {
       await emailAPI.submitFeedback(result.analysis_id, { feedback_type: type });
       setFeedback(type);
-      setFeedbackStatus({ loading: false, error: null });
+      setFeedbackStatus({ loading: false, error: null, needsLogin: false });
     } catch (e) {
       console.error('Feedback failed', e);
-      setFeedbackStatus({ loading: false, error: e.message || 'Unable to submit feedback.' });
+      const needsLogin = e.status === 401;
+      const message = needsLogin
+        ? 'Please sign in to submit analyst feedback.'
+        : (e.message || 'Unable to submit feedback.');
+      setFeedbackStatus({ loading: false, error: message, needsLogin });
     }
   };
 
@@ -371,7 +375,14 @@ export default function AnalyzeEmail() {
               <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>Submitting feedback...</div>
             )}
             {feedbackStatus.error && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#fca5a5' }}>⚠ {feedbackStatus.error}</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#fca5a5' }}>
+                ⚠ {feedbackStatus.error}
+                {feedbackStatus.needsLogin && (
+                  <span style={{ marginLeft: 6 }}>
+                    <a href="/login" style={{ color: '#93c5fd', textDecoration: 'underline' }}>Go to login</a>
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>
