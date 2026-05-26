@@ -460,7 +460,7 @@ async def submit_feedback(
 
     record.analyst_feedback = feedback.feedback_type.value
     record.analyst_notes = feedback.notes
-    record.feedback_at = datetime.now(timezone.utc)
+    record.feedback_at = datetime.utcnow()
     record.feedback_by = feedback.analyst_id or "anonymous"
 
     await db.commit()
